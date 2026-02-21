@@ -362,7 +362,6 @@ public final class PTYProcess {
         guard dup2(slaveFD, STDIN_FILENO) >= 0 else { childExitWithErrno("dup2(STDIN)") }
         guard dup2(slaveFD, STDOUT_FILENO) >= 0 else { childExitWithErrno("dup2(STDOUT)") }
         guard dup2(slaveFD, STDERR_FILENO) >= 0 else { childExitWithErrno("dup2(STDERR)") }
-        emitChildDebug("[PTYProcess child] dup2 for stdio succeeded\n")
 
         if slaveFD > STDERR_FILENO {
             _ = Darwin.close(slaveFD)

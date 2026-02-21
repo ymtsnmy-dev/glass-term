@@ -14,6 +14,7 @@ public final class TerminalSessionController: ObservableObject {
     private var latestBuffer: ScreenBuffer
     private var hasStarted = false
     private var lastRequestedSize: (rows: Int, cols: Int)?
+    private var loggedFirstRenderableBuffer = false
 
     public init(
         initialRows: Int = 24,
@@ -105,6 +106,18 @@ public final class TerminalSessionController: ObservableObject {
     private func applyUpdatedBuffer(_ buffer: ScreenBuffer) {
         latestBuffer = buffer
         renderVersion &+= 1
+
+        guard !loggedFirstRenderableBuffer else { return }
+        for row in 0..<buffer.rows {
+            let text = buffer.rowText(row).trimmingCharacters(in: .whitespaces)
+            if !text.isEmpty {
+                loggedFirstRenderableBuffer = true
+                if let data = "[TerminalSessionController] first renderable row=\(row) text=\(text)\n".data(using: .utf8) {
+                    FileHandle.standardError.write(data)
+                }
+                break
+            }
+        }
     }
 
     private func report(_ error: Error) {

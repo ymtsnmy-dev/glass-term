@@ -20,7 +20,7 @@ public struct TerminalView: View {
         let resolvedFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
 
         self.session = session
-        self.font = .custom(resolvedFont.fontName, size: resolvedFont.pointSize)
+        self.font = .system(size: resolvedFont.pointSize, weight: .regular, design: .monospaced)
         self.cellSize = Self.measureCellSize(for: resolvedFont)
         self.textColor = textColor
         self.backgroundColor = backgroundColor
@@ -177,9 +177,9 @@ public struct TerminalView: View {
 
         let rendered = Text(verbatim: text)
             .font(font)
-            .foregroundStyle(color)
-
-        context.draw(rendered, at: origin, anchor: .topLeading)
+        var resolved = context.resolve(rendered)
+        resolved.shading = .color(color)
+        context.draw(resolved, at: origin, anchor: .topLeading)
     }
 }
 
