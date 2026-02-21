@@ -53,7 +53,7 @@ public final class TerminalSessionController: ObservableObject {
             try bridge.start()
             applyUpdatedBuffer(bridge.snapshot())
         } catch {
-            startupError = String(describing: error)
+            report(error)
         }
     }
 
@@ -67,7 +67,7 @@ public final class TerminalSessionController: ObservableObject {
         do {
             try bridge.write(text)
         } catch {
-            startupError = String(describing: error)
+            report(error)
         }
     }
 
@@ -75,7 +75,7 @@ public final class TerminalSessionController: ObservableObject {
         do {
             try bridge.sendCtrlC()
         } catch {
-            startupError = String(describing: error)
+            report(error)
         }
     }
 
@@ -98,11 +98,20 @@ public final class TerminalSessionController: ObservableObject {
         } catch {
             bridge.emulator.resize(rows: rows, cols: cols)
             applyUpdatedBuffer(bridge.snapshot())
+            report(error)
         }
     }
 
     private func applyUpdatedBuffer(_ buffer: ScreenBuffer) {
         latestBuffer = buffer
         renderVersion &+= 1
+    }
+
+    private func report(_ error: Error) {
+        let message = String(describing: error)
+        startupError = message
+        if let data = "[TerminalSessionController] \(message)\n".data(using: .utf8) {
+            FileHandle.standardError.write(data)
+        }
     }
 }

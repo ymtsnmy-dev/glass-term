@@ -48,6 +48,8 @@ public struct TerminalView: View {
                         session.sendCtrlC()
                     }
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.clear)
             }
             .clipped()
             .onAppear {
@@ -259,6 +261,7 @@ private final class KeyCaptureView: NSView {
     var onKeyDown: ((NSEvent) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
+    override func becomeFirstResponder() -> Bool { true }
 
     override func keyDown(with event: NSEvent) {
         onKeyDown?(event)
