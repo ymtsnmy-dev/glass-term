@@ -60,6 +60,11 @@
 			path = ../Terminal/PTY;
 			sourceTree = "<group>";
 		};
+		42E6C2C72F4B2A8800341206 /* ../Terminal/Screen */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Terminal/Screen;
+			sourceTree = "<group>";
+		};
 		42F100012F4AB00100341206 /* glass-termTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "glass-termTests";
@@ -101,6 +106,7 @@
 				42B8154D2F4985E100341206 /* glass-term */,
 				42C4D0EE2F4A300100341206 /* ../Terminal/Emulator */,
 				42D74F222F49D30000341206 /* ../Terminal/PTY */,
+				42E6C2C72F4B2A8800341206 /* ../Terminal/Screen */,
 				42F100012F4AB00100341206 /* glass-termTests */,
 				42B8154C2F4985E100341206 /* Products */,
 				42B8164F2F49A92F00341206 /* Recovered References */,
@@ -143,6 +149,7 @@
 				42B8154D2F4985E100341206 /* glass-term */,
 				42C4D0EE2F4A300100341206 /* ../Terminal/Emulator */,
 				42D74F222F49D30000341206 /* ../Terminal/PTY */,
+				42E6C2C72F4B2A8800341206 /* ../Terminal/Screen */,
 			);
 			name = "glass-term";
 			packageProductDependencies = (
@@ -398,7 +405,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6H7P3DCR2X;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -430,7 +437,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6H7P3DCR2X;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;

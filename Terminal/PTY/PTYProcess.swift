@@ -62,9 +62,13 @@ public final class PTYProcess {
     private var childPID: pid_t = -1
     private var running = false
     private var exitNotified = false
+    private var didReceiveInitialOutput = false
+    private var slavePathForJobControl: String?
 
     private var readSource: DispatchSourceRead?
     private var waitTimer: DispatchSourceTimer?
+    private var startupMonitor: DispatchSourceTimer?
+    private var startupMonitorRemainingChecks = 0
     private var outputHandlerQueueStorage: DispatchQueue = .main
 
     public init(
@@ -94,6 +98,7 @@ public final class PTYProcess {
         let openFlags = O_RDWR | O_NOCTTY | O_NONBLOCK
         let master = posix_openpt(openFlags)
         guard master >= 0 else {
+            emitAsyncError("posix_openpt", errno: errno)
             throw makeSystemError("posix_openpt")
         }
 
@@ -105,20 +110,25 @@ public final class PTYProcess {
         }
 
         guard grantpt(master) == 0 else {
+            emitAsyncError("grantpt", errno: errno)
             throw makeSystemError("grantpt")
         }
 
         guard unlockpt(master) == 0 else {
+            emitAsyncError("unlockpt", errno: errno)
             throw makeSystemError("unlockpt")
         }
 
         guard let slaveName = ptsname(master) else {
+            emitAsyncError("ptsname", errno: errno)
             throw makeSystemError("ptsname")
         }
         let slavePath = String(cString: slaveName)
+        emitDebug("[PTYProcess] ptsname=\(slavePath)\n")
 
         let pid = posixFork()
         guard pid >= 0 else {
+            emitAsyncError("fork", errno: errno)
             throw makeSystemError("fork")
         }
 
@@ -130,23 +140,30 @@ public final class PTYProcess {
 
         let currentFlags = fcntl(master, F_GETFL)
         guard currentFlags >= 0 else {
+            emitAsyncError("fcntl(F_GETFL)", errno: errno)
             throw makeSystemError("fcntl(F_GETFL)")
         }
         guard fcntl(master, F_SETFL, currentFlags | O_NONBLOCK) == 0 else {
+            emitAsyncError("fcntl(F_SETFL)", errno: errno)
             throw makeSystemError("fcntl(F_SETFL)")
         }
+        emitDebug("[PTYProcess] master fd configured as non-blocking\n")
+        configureForegroundProcessGroup(slavePath: slavePath, childPID: pid)
 
         stateLock.lock()
         masterFD = master
         childPID = pid
         running = true
         exitNotified = false
+        didReceiveInitialOutput = false
+        slavePathForJobControl = slavePath
         stateLock.unlock()
 
         shouldCloseMaster = false
 
         startReadLoop(fd: master)
         startWaitLoop()
+        startStartupMonitor()
     }
 
     public func write(_ data: Data) throws {
@@ -176,6 +193,7 @@ public final class PTYProcess {
                     usleep(1_000)
                     continue
                 }
+                emitAsyncError("write", errno: errno)
                 throw makeSystemError("write")
             }
         }
@@ -189,8 +207,36 @@ public final class PTYProcess {
     }
 
     public func sendCtrlC() throws {
-        let pid = try runningChildPID()
-        guard Darwin.kill(pid, SIGINT) == 0 else {
+        let master = try runningMasterFD()
+        let child = try runningChildPID()
+
+        if let pfd = openJobControlSlaveFD() {
+            defer { _ = Darwin.close(pfd) }
+            let foregroundGroup = tcgetpgrp(pfd)
+            if foregroundGroup > 0 {
+                if Darwin.kill(-foregroundGroup, SIGINT) == 0 {
+                    return
+                }
+                emitAsyncError("kill(-tcgetpgrp(slave), SIGINT)", errno: errno)
+            } else if foregroundGroup == -1 {
+                emitAsyncError("tcgetpgrp(slave)", errno: errno)
+            }
+        }
+
+        var ctrlC = UInt8(0x03)
+        while true {
+            let written = Darwin.write(master, &ctrlC, 1)
+            if written == 1 {
+                return
+            }
+            if written == -1, errno == EINTR {
+                continue
+            }
+            break
+        }
+
+        guard Darwin.kill(child, SIGINT) == 0 else {
+            emitAsyncError("kill(child, SIGINT)", errno: errno)
             throw makeSystemError("kill(SIGINT)")
         }
     }
@@ -211,10 +257,12 @@ public final class PTYProcess {
         )
 
         guard ioctl(fd, TIOCSWINSZ, &size) == 0 else {
+            emitAsyncError("ioctl(TIOCSWINSZ)", errno: errno)
             throw makeSystemError("ioctl(TIOCSWINSZ)")
         }
 
         guard Darwin.kill(pid, SIGWINCH) == 0 else {
+            emitAsyncError("kill(SIGWINCH)", errno: errno)
             throw makeSystemError("kill(SIGWINCH)")
         }
     }
@@ -227,6 +275,9 @@ public final class PTYProcess {
         }
         if let waitTimer = snapshot.waitTimer {
             waitTimer.cancel()
+        }
+        if let startupMonitor = snapshot.startupMonitor {
+            startupMonitor.cancel()
         }
 
         if snapshot.masterFD >= 0 {
@@ -292,6 +343,7 @@ public final class PTYProcess {
 
         let slaveFD = Darwin.open(slavePath, O_RDWR)
         guard slaveFD >= 0 else {
+            emitChildDebug("[PTYProcess child] open(slave) failed\n")
             childExitWithErrno("open(slave)")
         }
         emitChildDebug("[PTYProcess child] open(slave) succeeded fd=\(slaveFD)\n")
@@ -307,10 +359,21 @@ public final class PTYProcess {
         if ioctl(slaveFD, TIOCSCTTY, 0) == 0 {
             emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) succeeded\n")
         } else if errno == EPERM {
-            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) returned EPERM; continuing\n")
+            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) EPERM; continuing\n")
         } else {
             childExitWithErrno("ioctl(TIOCSCTTY)")
         }
+
+        if setpgid(0, 0) != 0 {
+            if errno != EPERM {
+                childExitWithErrno("setpgid")
+            }
+        }
+        guard getpgrp() == getpid() else {
+            emitChildDebug("[PTYProcess child] setpgid did not place child in its own group\n")
+            _exit(127)
+        }
+        emitChildDebug("[PTYProcess child] setpgid/getpgrp check succeeded\n")
 
         guard dup2(slaveFD, STDIN_FILENO) >= 0 else { childExitWithErrno("dup2(STDIN)") }
         guard dup2(slaveFD, STDOUT_FILENO) >= 0 else { childExitWithErrno("dup2(STDOUT)") }
@@ -320,7 +383,12 @@ public final class PTYProcess {
             _ = Darwin.close(slaveFD)
         }
 
-        var argv: [UnsafeMutablePointer<CChar>?] = [strdup(shellPath), nil]
+        closeExtraFileDescriptors(keeping: [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO])
+
+        let programName = URL(fileURLWithPath: shellPath).lastPathComponent.isEmpty
+            ? "zsh"
+            : URL(fileURLWithPath: shellPath).lastPathComponent
+        var argv: [UnsafeMutablePointer<CChar>?] = [strdup(programName), strdup("-l"), nil]
 
         var envStrings = environment.map { "\($0.key)=\($0.value)" }
         if envStrings.first(where: { $0.hasPrefix("TERM=") }) == nil {
@@ -343,6 +411,7 @@ public final class PTYProcess {
     }
 
     private func startReadLoop(fd: Int32) {
+        emitDebug("[PTYProcess] starting read loop fd=\(fd)\n")
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: ioQueue)
         source.setEventHandler { [weak self] in
             self?.drainReadableData(fd: fd)
@@ -359,6 +428,7 @@ public final class PTYProcess {
     }
 
     private func startWaitLoop() {
+        emitDebug("[PTYProcess] starting child-exit wait loop\n")
         let timer = DispatchSource.makeTimerSource(queue: ioQueue)
         timer.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
         timer.setEventHandler { [weak self] in
@@ -390,6 +460,7 @@ public final class PTYProcess {
             if bytesRead == 0 {
                 emitDebug("[PTYProcess] read EOF (0 bytes)\n")
                 pollChildExit()
+                notifyExitIfNeeded(code: nil)
                 return
             }
 
@@ -408,6 +479,22 @@ public final class PTYProcess {
     }
 
     private func emitOutput(_ data: Data) {
+        let isInitialOutput: Bool = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+
+            if didReceiveInitialOutput {
+                return false
+            }
+            didReceiveInitialOutput = true
+            return true
+        }()
+
+        if isInitialOutput {
+            emitDebug("[PTYProcess] received initial PTY output (\(data.count) bytes)\n")
+            cancelStartupMonitor()
+        }
+
         let callbackState: (((Data) -> Void)?, DispatchQueue) = {
             stateLock.lock()
             defer { stateLock.unlock() }
@@ -458,6 +545,7 @@ public final class PTYProcess {
         let callback: ((Int32?) -> Void)?
         let readSourceToCancel: DispatchSourceRead?
         let waitTimerToCancel: DispatchSourceTimer?
+        let startupMonitorToCancel: DispatchSourceTimer?
         let fdToClose: Int32
 
         stateLock.lock()
@@ -466,6 +554,7 @@ public final class PTYProcess {
             callback = nil
             readSourceToCancel = nil
             waitTimerToCancel = nil
+            startupMonitorToCancel = nil
             fdToClose = -1
         } else {
             exitNotified = true
@@ -474,12 +563,17 @@ public final class PTYProcess {
             callback = onExit
             readSourceToCancel = readSource
             waitTimerToCancel = waitTimer
+            startupMonitorToCancel = startupMonitor
             fdToClose = masterFD
 
             readSource = nil
             waitTimer = nil
+            startupMonitor = nil
+            startupMonitorRemainingChecks = 0
             masterFD = -1
             childPID = -1
+            didReceiveInitialOutput = false
+            slavePathForJobControl = nil
             shouldNotify = true
         }
         stateLock.unlock()
@@ -490,6 +584,7 @@ public final class PTYProcess {
 
         readSourceToCancel?.cancel()
         waitTimerToCancel?.cancel()
+        startupMonitorToCancel?.cancel()
 
         if fdToClose >= 0 {
             _ = Darwin.close(fdToClose)
@@ -505,7 +600,8 @@ public final class PTYProcess {
         childPID: pid_t,
         masterFD: Int32,
         readSource: DispatchSourceRead?,
-        waitTimer: DispatchSourceTimer?
+        waitTimer: DispatchSourceTimer?,
+        startupMonitor: DispatchSourceTimer?
     ) {
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -515,7 +611,8 @@ public final class PTYProcess {
             childPID: childPID,
             masterFD: masterFD,
             readSource: readSource,
-            waitTimer: waitTimer
+            waitTimer: waitTimer,
+            startupMonitor: startupMonitor
         )
 
         running = false
@@ -523,6 +620,10 @@ public final class PTYProcess {
         masterFD = -1
         readSource = nil
         waitTimer = nil
+        startupMonitor = nil
+        startupMonitorRemainingChecks = 0
+        didReceiveInitialOutput = false
+        slavePathForJobControl = nil
 
         return snapshot
     }
@@ -627,5 +728,201 @@ public final class PTYProcess {
         message.withCString { ptr in
             _ = Darwin.write(STDERR_FILENO, ptr, strlen(ptr))
         }
+    }
+
+    private func startStartupMonitor() {
+        let monitor = DispatchSource.makeTimerSource(queue: ioQueue)
+        monitor.schedule(deadline: .now() + .milliseconds(300), repeating: .milliseconds(300))
+        monitor.setEventHandler { [weak self] in
+            self?.handleStartupMonitorTick()
+        }
+        monitor.setCancelHandler {
+            // no-op
+        }
+
+        stateLock.lock()
+        startupMonitor?.cancel()
+        startupMonitor = monitor
+        startupMonitorRemainingChecks = 12
+        stateLock.unlock()
+
+        emitDebug("[PTYProcess] startup monitor armed\n")
+        monitor.resume()
+    }
+
+    private func cancelStartupMonitor() {
+        let monitor: DispatchSourceTimer? = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            let monitor = startupMonitor
+            startupMonitor = nil
+            startupMonitorRemainingChecks = 0
+            return monitor
+        }()
+        monitor?.cancel()
+    }
+
+    private func handleStartupMonitorTick() {
+        let snapshot: (running: Bool, pid: pid_t, hasOutput: Bool, remainingChecks: Int) = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return (running, childPID, didReceiveInitialOutput, startupMonitorRemainingChecks)
+        }()
+
+        if snapshot.hasOutput {
+            emitDebug("[PTYProcess] startup monitor: output received\n")
+            cancelStartupMonitor()
+            return
+        }
+
+        guard snapshot.running, snapshot.pid > 0 else {
+            emitDebug("[PTYProcess] startup monitor: process already stopped\n")
+            cancelStartupMonitor()
+            return
+        }
+
+        var status: Int32 = 0
+        let result = waitpid(snapshot.pid, &status, WNOHANG)
+        if result == snapshot.pid {
+            logWaitStatus(context: "startupMonitor(waitpid WNOHANG)", status: status)
+            notifyExitIfNeeded(code: decodeExitCode(status))
+            cancelStartupMonitor()
+            return
+        }
+        if result == -1, errno != ECHILD {
+            emitAsyncError("startupMonitor(waitpid WNOHANG)", errno: errno)
+        }
+
+        let timeoutReached: Bool = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            startupMonitorRemainingChecks -= 1
+            return startupMonitorRemainingChecks <= 0
+        }()
+
+        if timeoutReached {
+            emitDebug("[PTYProcess] startup monitor timeout: no output and child still running\n")
+            cancelStartupMonitor()
+        }
+    }
+
+    private func closeExtraFileDescriptors(keeping: Set<Int32>) {
+        let maxFD = getdtablesize()
+        guard maxFD > 0 else { return }
+
+        for fd in 0..<maxFD {
+            let descriptor = Int32(fd)
+            if keeping.contains(descriptor) {
+                continue
+            }
+            _ = Darwin.close(descriptor)
+        }
+    }
+
+    private func configureForegroundProcessGroup(slavePath: String, childPID: pid_t) {
+        _ = waitForChildProcessGroupReadiness(childPID: childPID)
+
+        if setpgid(childPID, childPID) == 0 {
+            emitDebug("[PTYProcess] setpgid(parent) succeeded child pid=\(childPID)\n")
+        } else {
+            switch errno {
+            case EACCES:
+                emitDebug("[PTYProcess] setpgid(parent) EACCES; child already grouped\n")
+            case EPERM:
+                emitDebug("[PTYProcess] setpgid(parent) EPERM; child already grouped/session-adjusted\n")
+            default:
+                emitAsyncError("setpgid(parent child)", errno: errno)
+            }
+        }
+
+        let parentSlaveFD = Darwin.open(slavePath, O_RDWR)
+        guard parentSlaveFD >= 0 else {
+            emitAsyncError("open(parent slave for pgrp)", errno: errno)
+            return
+        }
+        defer { _ = Darwin.close(parentSlaveFD) }
+
+        var lastTCSetPgrpErrno: Int32?
+        var lastTIOCSPGRPErrno: Int32?
+
+        for attempt in 1...20 {
+            if tcsetpgrp(parentSlaveFD, childPID) == 0 {
+                emitDebug("[PTYProcess] tcsetpgrp(parent slave) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
+                return
+            }
+            let tcsetErrno = errno
+            lastTCSetPgrpErrno = tcsetErrno
+
+            var processGroup = childPID
+            if ioctl(parentSlaveFD, TIOCSPGRP, &processGroup) == 0 {
+                emitDebug("[PTYProcess] ioctl(TIOCSPGRP, parent slave) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
+                return
+            }
+            let ioctlErrno = errno
+            lastTIOCSPGRPErrno = ioctlErrno
+
+            if !isForegroundPgrpRetryable(tcsetErrno) && !isForegroundPgrpRetryable(ioctlErrno) {
+                break
+            }
+            usleep(5_000)
+        }
+
+        if let lastTCSetPgrpErrno {
+            emitAsyncError("tcsetpgrp(parent slave)", errno: lastTCSetPgrpErrno)
+        }
+        if let lastTIOCSPGRPErrno {
+            emitAsyncError("ioctl(TIOCSPGRP, parent slave)", errno: lastTIOCSPGRPErrno)
+        }
+        emitDebug("[PTYProcess] unable to set foreground pgrp on parent slave for child pid=\(childPID)\n")
+    }
+
+    private func isForegroundPgrpRetryable(_ code: Int32) -> Bool {
+        switch code {
+        case EINTR, EPERM, ENOTTY, EINVAL, ESRCH, EACCES:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func waitForChildProcessGroupReadiness(childPID: pid_t) -> Bool {
+        for _ in 0..<40 {
+            let groupID = getpgid(childPID)
+            if groupID == childPID {
+                emitDebug("[PTYProcess] child already has dedicated pgrp=\(groupID)\n")
+                return true
+            }
+            if groupID == -1 {
+                if errno == EINTR {
+                    continue
+                }
+                emitAsyncError("getpgid(child)", errno: errno)
+                return false
+            }
+            usleep(5_000)
+        }
+
+        emitDebug("[PTYProcess] child pgrp readiness timeout pid=\(childPID)\n")
+        return false
+    }
+
+    private func openJobControlSlaveFD() -> Int32? {
+        let slavePath: String? = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return slavePathForJobControl
+        }()
+
+        guard let slavePath else {
+            emitDebug("[PTYProcess] openJobControlSlaveFD skipped: no slave path\n")
+            return nil
+        }
+
+        let fd = Darwin.open(slavePath, O_RDWR)
+        if fd < 0 {
+            emitAsyncError("open(job-control slave)", errno: errno)
+            return nil
+        }
+        return fd
     }
 }

@@ -1,24 +1,14 @@
-//
-//  ContentView.swift
-//  glass-term
-//
-//  Created by Yamato Shinomiya on 2026/02/21.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @ObservedObject var session: TerminalSessionController
 
-#Preview {
-    ContentView()
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+
+            TerminalView(session: session)
+        }
+    }
 }

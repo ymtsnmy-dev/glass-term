@@ -131,7 +131,7 @@ public final class PTYEmulatorBridge {
             return emulator.snapshot()
         }
 
-        emulatorQueue.sync {
+        return emulatorQueue.sync {
             emulator.snapshot()
         }
     }
