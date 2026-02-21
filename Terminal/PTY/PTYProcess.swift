@@ -33,6 +33,18 @@ public final class PTYProcess {
 
     public var onOutput: ((Data) -> Void)?
     public var onExit: ((Int32?) -> Void)?
+    public var outputHandlerQueue: DispatchQueue {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return outputHandlerQueueStorage
+        }
+        set {
+            stateLock.lock()
+            outputHandlerQueueStorage = newValue
+            stateLock.unlock()
+        }
+    }
 
     public var isRunning: Bool {
         stateLock.lock()
@@ -53,6 +65,7 @@ public final class PTYProcess {
 
     private var readSource: DispatchSourceRead?
     private var waitTimer: DispatchSourceTimer?
+    private var outputHandlerQueueStorage: DispatchQueue = .main
 
     public init(
         shellPath: String = "/bin/zsh",
@@ -370,9 +383,7 @@ public final class PTYProcess {
 
             if bytesRead > 0 {
                 let data = Data(buffer.prefix(Int(bytesRead)))
-                DispatchQueue.main.async { [weak self] in
-                    self?.onOutput?(data)
-                }
+                emitOutput(data)
                 continue
             }
 
@@ -393,6 +404,22 @@ public final class PTYProcess {
             emitAsyncError("read", errno: errno)
             terminate()
             return
+        }
+    }
+
+    private func emitOutput(_ data: Data) {
+        let callbackState: (((Data) -> Void)?, DispatchQueue) = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return (onOutput, outputHandlerQueueStorage)
+        }()
+
+        guard let callback = callbackState.0 else {
+            return
+        }
+
+        callbackState.1.async {
+            callback(data)
         }
     }
 
