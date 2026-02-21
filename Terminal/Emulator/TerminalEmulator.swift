@@ -24,6 +24,12 @@ private func terminalScreenSetTermPropCallback(_ prop: VTermProp, _ val: UnsafeM
     return emulator.handleSetTermProp(prop: prop, val: val)
 }
 
+private func terminalScreenBellCallback(_ user: UnsafeMutableRawPointer?) -> Int32 {
+    guard let user else { return 0 }
+    let emulator = Unmanaged<TerminalEmulator>.fromOpaque(user).takeUnretainedValue()
+    return emulator.handleBell()
+}
+
 private func terminalScreenResizeCallback(_ rows: Int32, _ cols: Int32, _ user: UnsafeMutableRawPointer?) -> Int32 {
     guard let user else { return 0 }
     let emulator = Unmanaged<TerminalEmulator>.fromOpaque(user).takeUnretainedValue()
@@ -47,7 +53,7 @@ private var terminalScreenCallbacks = VTermScreenCallbacks(
     moverect: terminalScreenMoveRectCallback,
     movecursor: terminalScreenMoveCursorCallback,
     settermprop: terminalScreenSetTermPropCallback,
-    bell: nil,
+    bell: terminalScreenBellCallback,
     resize: terminalScreenResizeCallback,
     sb_pushline: terminalScreenPushLineCallback,
     sb_popline: nil,
@@ -75,6 +81,19 @@ public final class TerminalEmulator {
     private var state: OpaquePointer?
 
     private let scrollbackLimit = 10_000
+    private let bracketedPasteEnableSequence: [UInt8] = [0x1B, 0x5B, 0x3F, 0x32, 0x30, 0x30, 0x34, 0x68] // ESC[?2004h
+    private let bracketedPasteDisableSequence: [UInt8] = [0x1B, 0x5B, 0x3F, 0x32, 0x30, 0x30, 0x34, 0x6C] // ESC[?2004l
+
+    private var bracketedPasteScanTail: [UInt8] = []
+    private var bracketedPasteEnabledStorage = false
+    private var cursorShapeNumberStorage = 1
+    private var cursorBlinkStorage = true
+    private var windowTitleStorage = ""
+    private var iconNameStorage = ""
+    private var bellSequenceStorage: UInt64 = 0
+    private var titleFragmentStorage = ""
+    private var iconNameFragmentStorage = ""
+
     private var primaryBuffer: ScreenBuffer
     private var alternateBuffer: ScreenBuffer
     private var activeBufferKindStorage: ActiveBufferKind = .primary
@@ -106,6 +125,7 @@ public final class TerminalEmulator {
 
         withQueue {
             guard let vterm else { return }
+            updateBracketedPasteModeFromOutput(data)
 
             data.withUnsafeBytes { rawBuffer in
                 guard let baseAddress = rawBuffer.baseAddress else { return }
@@ -182,6 +202,7 @@ public final class TerminalEmulator {
             activeBufferKindStorage = isAlternate ? .alternate : .primary
             rebuildActiveBufferFromScreen()
             syncCursorFromState()
+            syncTerminalPropertiesToBuffers()
             return 1
         }
 
@@ -193,6 +214,40 @@ public final class TerminalEmulator {
             return 1
         }
 
+        if prop == VTERM_PROP_CURSORBLINK {
+            cursorBlinkStorage = (val?.pointee.boolean ?? 0) != 0
+            syncTerminalPropertiesToBuffers()
+            return 1
+        }
+
+        if prop == VTERM_PROP_CURSORSHAPE {
+            cursorShapeNumberStorage = Int(val?.pointee.number ?? 1)
+            syncTerminalPropertiesToBuffers()
+            return 1
+        }
+
+        if prop == VTERM_PROP_TITLE {
+            applyStringPropertyFragment(
+                prop: prop,
+                fragment: val?.pointee.string
+            )
+            return 1
+        }
+
+        if prop == VTERM_PROP_ICONNAME {
+            applyStringPropertyFragment(
+                prop: prop,
+                fragment: val?.pointee.string
+            )
+            return 1
+        }
+
+        return 1
+    }
+
+    fileprivate func handleBell() -> Int32 {
+        bellSequenceStorage &+= 1
+        syncTerminalPropertiesToBuffers()
         return 1
     }
 
@@ -274,6 +329,7 @@ public final class TerminalEmulator {
         }
         rebuildActiveBufferFromScreen()
         syncCursorFromState()
+        syncTerminalPropertiesToBuffers()
     }
 
     private func syncCursorFromState() {
@@ -304,6 +360,7 @@ public final class TerminalEmulator {
             return
         }
 
+        var rebuiltStorage = Array(repeating: ScreenCell.blank, count: dimensions.rows * dimensions.cols)
         for row in 0..<dimensions.rows {
             for col in 0..<dimensions.cols {
                 var vtermCell = VTermScreenCell()
@@ -311,10 +368,12 @@ public final class TerminalEmulator {
                 let hasCell = vterm_screen_get_cell(screen, pos, &vtermCell)
                 let screenCell = hasCell != 0 ? convertVTermCell(vtermCell) : .blank
 
-                mutateActiveBuffer { buffer in
-                    buffer.setCell(row: row, col: col, cell: screenCell)
-                }
+                rebuiltStorage[(row * dimensions.cols) + col] = screenCell
             }
+        }
+
+        mutateActiveBuffer { buffer in
+            buffer.replaceVisibleStorage(rebuiltStorage)
         }
     }
 
@@ -391,6 +450,114 @@ public final class TerminalEmulator {
 
     private static func colorUsesDefaultBackground(_ color: VTermColor) -> Bool {
         (color.type & VTermColorBits.defaultBackground) != 0
+    }
+
+    private func applyStringPropertyFragment(
+        prop: VTermProp,
+        fragment: VTermStringFragment?
+    ) {
+        guard let fragment else { return }
+        let text = Self.decodeStringFragment(fragment)
+
+        switch prop {
+        case VTERM_PROP_TITLE:
+            if fragment.initial {
+                titleFragmentStorage = ""
+            }
+            titleFragmentStorage += text
+            if fragment.final {
+                windowTitleStorage = titleFragmentStorage
+                syncTerminalPropertiesToBuffers()
+            }
+        case VTERM_PROP_ICONNAME:
+            if fragment.initial {
+                iconNameFragmentStorage = ""
+            }
+            iconNameFragmentStorage += text
+            if fragment.final {
+                iconNameStorage = iconNameFragmentStorage
+                if windowTitleStorage.isEmpty {
+                    windowTitleStorage = iconNameStorage
+                }
+                syncTerminalPropertiesToBuffers()
+            }
+        default:
+            break
+        }
+    }
+
+    private static func decodeStringFragment(_ fragment: VTermStringFragment) -> String {
+        guard let pointer = fragment.str, fragment.len > 0 else {
+            return ""
+        }
+
+        let bytes = UnsafeRawPointer(pointer)
+            .assumingMemoryBound(to: UInt8.self)
+        let buffer = UnsafeBufferPointer(start: bytes, count: Int(fragment.len))
+        return String(decoding: buffer, as: UTF8.self)
+    }
+
+    private func syncTerminalPropertiesToBuffers() {
+        let resolvedWindowTitle = !windowTitleStorage.isEmpty ? windowTitleStorage : iconNameStorage
+
+        primaryBuffer.setCursorShape(number: cursorShapeNumberStorage)
+        primaryBuffer.setCursorBlink(cursorBlinkStorage)
+        primaryBuffer.setWindowTitle(resolvedWindowTitle)
+        primaryBuffer.setBellSequence(bellSequenceStorage)
+        primaryBuffer.setBracketedPasteEnabled(bracketedPasteEnabledStorage)
+
+        alternateBuffer.setCursorShape(number: cursorShapeNumberStorage)
+        alternateBuffer.setCursorBlink(cursorBlinkStorage)
+        alternateBuffer.setWindowTitle(resolvedWindowTitle)
+        alternateBuffer.setBellSequence(bellSequenceStorage)
+        alternateBuffer.setBracketedPasteEnabled(bracketedPasteEnabledStorage)
+    }
+
+    private func updateBracketedPasteModeFromOutput(_ data: Data) {
+        var combined = bracketedPasteScanTail
+        combined.reserveCapacity(bracketedPasteScanTail.count + data.count)
+        combined.append(contentsOf: data)
+
+        let enableIndex = Self.lastOccurrence(of: bracketedPasteEnableSequence, in: combined)
+        let disableIndex = Self.lastOccurrence(of: bracketedPasteDisableSequence, in: combined)
+
+        var updatedMode: Bool?
+        switch (enableIndex, disableIndex) {
+        case let (.some(enabled), .some(disabled)):
+            updatedMode = enabled > disabled
+        case (.some, .none):
+            updatedMode = true
+        case (.none, .some):
+            updatedMode = false
+        case (.none, .none):
+            break
+        }
+
+        if let updatedMode, updatedMode != bracketedPasteEnabledStorage {
+            bracketedPasteEnabledStorage = updatedMode
+            syncTerminalPropertiesToBuffers()
+        }
+
+        let tailLength = max(bracketedPasteEnableSequence.count, bracketedPasteDisableSequence.count) - 1
+        if combined.count > tailLength {
+            bracketedPasteScanTail = Array(combined.suffix(tailLength))
+        } else {
+            bracketedPasteScanTail = combined
+        }
+    }
+
+    private static func lastOccurrence(of pattern: [UInt8], in bytes: [UInt8]) -> Int? {
+        guard !pattern.isEmpty else { return nil }
+        guard bytes.count >= pattern.count else { return nil }
+
+        var lastMatch: Int?
+        let lastStart = bytes.count - pattern.count
+        for start in 0...lastStart {
+            if bytes[start..<(start + pattern.count)].elementsEqual(pattern) {
+                lastMatch = start
+            }
+        }
+        return lastMatch
     }
 
     private static func decodeChars(_ cell: VTermScreenCell) -> String {

@@ -7,6 +7,8 @@ public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var renderVersion: UInt64 = 0
     @Published public private(set) var startupError: String?
     @Published public private(set) var viewportOffsetRows: Int = 0
+    @Published public private(set) var windowTitle: String = "glass-term"
+    @Published public private(set) var bellSequence: UInt64 = 0
 
     public let process: PTYProcess
     public let emulator: TerminalEmulator
@@ -91,13 +93,7 @@ public final class TerminalSessionController: ObservableObject {
 
     public func handlePointerScroll(deltaY: CGFloat, precise: Bool) {
         guard deltaY != 0 else { return }
-
-        let didScrollViewport = scrollViewport(deltaY: deltaY, precise: precise)
-        guard !didScrollViewport, latestBuffer.isAlternate else {
-            return
-        }
-
-        sendInput(deltaY > 0 ? "\u{1B}[5~" : "\u{1B}[6~")
+        _ = scrollViewport(deltaY: deltaY, precise: precise)
     }
 
     public func handlePointerCursorMove(targetDisplayRow: Int, targetCol: Int) {
@@ -144,6 +140,17 @@ public final class TerminalSessionController: ObservableObject {
         }
     }
 
+    public func sendPaste(_ text: String) {
+        guard !text.isEmpty else { return }
+        scrollViewportToBottom()
+
+        if latestBuffer.isBracketedPasteEnabled {
+            sendInput("\u{1B}[200~\(text)\u{1B}[201~")
+        } else {
+            sendInput(text)
+        }
+    }
+
     public func sendCtrlC() {
         scrollViewportToBottom()
         do {
@@ -181,6 +188,8 @@ public final class TerminalSessionController: ObservableObject {
         let previousOffset = viewportOffsetRows
 
         latestBuffer = buffer
+        windowTitle = buffer.windowTitle.isEmpty ? "glass-term" : buffer.windowTitle
+        bellSequence = buffer.bellSequence
 
         if buffer.isAlternate {
             viewportOffsetRows = 0
