@@ -6,6 +6,7 @@ import Foundation
 public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var renderVersion: UInt64 = 0
     @Published public private(set) var startupError: String?
+    @Published public private(set) var viewportOffsetRows: Int = 0
 
     public let process: PTYProcess
     public let emulator: TerminalEmulator
@@ -62,8 +63,79 @@ public final class TerminalSessionController: ObservableObject {
         latestBuffer
     }
 
+    public func maxViewportOffsetRows() -> Int {
+        max(0, latestBuffer.totalRows - latestBuffer.rows)
+    }
+
+    public func setViewportOffsetRows(_ offset: Int) {
+        let clamped = clampViewportOffset(offset)
+        guard viewportOffsetRows != clamped else { return }
+        viewportOffsetRows = clamped
+        renderVersion &+= 1
+    }
+
+    @discardableResult
+    public func scrollViewport(deltaY: CGFloat, precise: Bool) -> Bool {
+        guard deltaY != 0 else { return false }
+
+        let normalized = abs(deltaY) / (precise ? 10 : 1)
+        let rows = max(1, Int(round(normalized)))
+        let beforeOffset = viewportOffsetRows
+        if deltaY > 0 {
+            setViewportOffsetRows(viewportOffsetRows + rows)
+        } else {
+            setViewportOffsetRows(viewportOffsetRows - rows)
+        }
+        return viewportOffsetRows != beforeOffset
+    }
+
+    public func handlePointerScroll(deltaY: CGFloat, precise: Bool) {
+        guard deltaY != 0 else { return }
+
+        let didScrollViewport = scrollViewport(deltaY: deltaY, precise: precise)
+        guard !didScrollViewport, latestBuffer.isAlternate else {
+            return
+        }
+
+        sendInput(deltaY > 0 ? "\u{1B}[5~" : "\u{1B}[6~")
+    }
+
+    public func handlePointerCursorMove(targetDisplayRow: Int, targetCol: Int) {
+        let buffer = latestBuffer
+        guard buffer.rows > 0, buffer.cols > 0 else { return }
+
+        let clampedCol = min(max(0, targetCol), buffer.cols - 1)
+        let targetDisplayMin = buffer.scrollbackRows
+        let targetDisplayMax = buffer.scrollbackRows + buffer.rows - 1
+        guard targetDisplayRow >= targetDisplayMin, targetDisplayRow <= targetDisplayMax else {
+            return
+        }
+
+        let targetRow = targetDisplayRow - buffer.scrollbackRows
+        let cursor = buffer.cursor
+
+        var sequence = ""
+        let rowDelta = targetRow - cursor.row
+        if rowDelta < 0 {
+            sequence += String(repeating: "\u{1B}[A", count: -rowDelta)
+        } else if rowDelta > 0 {
+            sequence += String(repeating: "\u{1B}[B", count: rowDelta)
+        }
+
+        let colDelta = clampedCol - cursor.col
+        if colDelta < 0 {
+            sequence += String(repeating: "\u{1B}[D", count: -colDelta)
+        } else if colDelta > 0 {
+            sequence += String(repeating: "\u{1B}[C", count: colDelta)
+        }
+
+        guard !sequence.isEmpty else { return }
+        sendInput(sequence)
+    }
+
     public func sendInput(_ text: String) {
         guard !text.isEmpty else { return }
+        scrollViewportToBottom()
 
         do {
             try bridge.write(text)
@@ -73,6 +145,7 @@ public final class TerminalSessionController: ObservableObject {
     }
 
     public func sendCtrlC() {
+        scrollViewportToBottom()
         do {
             try bridge.sendCtrlC()
         } catch {
@@ -104,7 +177,20 @@ public final class TerminalSessionController: ObservableObject {
     }
 
     private func applyUpdatedBuffer(_ buffer: ScreenBuffer) {
+        let previous = latestBuffer
+        let previousOffset = viewportOffsetRows
+
         latestBuffer = buffer
+
+        if buffer.isAlternate {
+            viewportOffsetRows = 0
+        } else if previousOffset > 0 {
+            let pushedRows = max(0, buffer.scrollbackRows - previous.scrollbackRows)
+            viewportOffsetRows = clampViewportOffset(previousOffset + pushedRows)
+        } else {
+            viewportOffsetRows = 0
+        }
+
         renderVersion &+= 1
 
         guard !loggedFirstRenderableBuffer else { return }
@@ -126,5 +212,16 @@ public final class TerminalSessionController: ObservableObject {
         if let data = "[TerminalSessionController] \(message)\n".data(using: .utf8) {
             FileHandle.standardError.write(data)
         }
+    }
+
+    private func clampViewportOffset(_ offset: Int) -> Int {
+        let maxOffset = maxViewportOffsetRows()
+        return min(max(0, offset), maxOffset)
+    }
+
+    private func scrollViewportToBottom() {
+        guard viewportOffsetRows != 0 else { return }
+        viewportOffsetRows = 0
+        renderVersion &+= 1
     }
 }

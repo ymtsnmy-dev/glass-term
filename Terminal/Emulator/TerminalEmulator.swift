@@ -30,6 +30,18 @@ private func terminalScreenResizeCallback(_ rows: Int32, _ cols: Int32, _ user: 
     return emulator.handleResize(rows: rows, cols: cols)
 }
 
+private func terminalScreenPushLineCallback(_ cols: Int32, _ cells: UnsafePointer<VTermScreenCell>?, _ user: UnsafeMutableRawPointer?) -> Int32 {
+    guard let user else { return 0 }
+    let emulator = Unmanaged<TerminalEmulator>.fromOpaque(user).takeUnretainedValue()
+    return emulator.handlePushScrollbackLine(cols: cols, cells: cells)
+}
+
+private func terminalScreenClearScrollbackCallback(_ user: UnsafeMutableRawPointer?) -> Int32 {
+    guard let user else { return 0 }
+    let emulator = Unmanaged<TerminalEmulator>.fromOpaque(user).takeUnretainedValue()
+    return emulator.handleClearScrollback()
+}
+
 private var terminalScreenCallbacks = VTermScreenCallbacks(
     damage: terminalScreenDamageCallback,
     moverect: terminalScreenMoveRectCallback,
@@ -37,9 +49,9 @@ private var terminalScreenCallbacks = VTermScreenCallbacks(
     settermprop: terminalScreenSetTermPropCallback,
     bell: nil,
     resize: terminalScreenResizeCallback,
-    sb_pushline: nil,
+    sb_pushline: terminalScreenPushLineCallback,
     sb_popline: nil,
-    sb_clear: nil,
+    sb_clear: terminalScreenClearScrollbackCallback,
     sb_pushline4: nil
 )
 
@@ -51,11 +63,18 @@ public final class TerminalEmulator {
 
     private let queue = DispatchQueue(label: "com.glass-term.terminal.emulator")
     private let queueKey = DispatchSpecificKey<UInt8>()
+    private enum VTermColorBits {
+        static let typeMask: UInt8 = 0x01
+        static let indexed: UInt8 = 0x01
+        static let defaultForeground: UInt8 = 0x02
+        static let defaultBackground: UInt8 = 0x04
+    }
 
     private var vterm: OpaquePointer?
     private var screen: OpaquePointer?
     private var state: OpaquePointer?
 
+    private let scrollbackLimit = 10_000
     private var primaryBuffer: ScreenBuffer
     private var alternateBuffer: ScreenBuffer
     private var activeBufferKindStorage: ActiveBufferKind = .primary
@@ -113,11 +132,12 @@ public final class TerminalEmulator {
         precondition(rows > 0 && cols > 0, "Terminal size must be positive")
 
         withQueue {
-            guard let vterm else { return }
+            guard let vterm, let screen else { return }
 
             vterm_set_size(vterm, Int32(rows), Int32(cols))
             resizeBuffers(rows: rows, cols: cols)
-            refreshEntireActiveBuffer()
+            vterm_screen_flush_damage(screen)
+            rebuildActiveBufferFromScreen()
             syncCursorFromState()
         }
     }
@@ -134,26 +154,17 @@ public final class TerminalEmulator {
     }
 
     fileprivate func handleDamage(_ rect: VTermRect) -> Int32 {
-        refreshRect(
-            startRow: Int(rect.start_row),
-            endRow: Int(rect.end_row),
-            startCol: Int(rect.start_col),
-            endCol: Int(rect.end_col)
-        )
+        _ = rect
+        rebuildActiveBufferFromScreen()
+        syncCursorFromState()
         return 1
     }
 
     fileprivate func handleMoveRect(dest: VTermRect, src: VTermRect) -> Int32 {
-        mutateActiveBuffer { buffer in
-            buffer.moveRect(
-                destStartRow: Int(dest.start_row),
-                destEndRow: Int(dest.end_row),
-                destStartCol: Int(dest.start_col),
-                destEndCol: Int(dest.end_col),
-                srcStartRow: Int(src.start_row),
-                srcStartCol: Int(src.start_col)
-            )
-        }
+        _ = dest
+        _ = src
+        rebuildActiveBufferFromScreen()
+        syncCursorFromState()
         return 1
     }
 
@@ -169,7 +180,7 @@ public final class TerminalEmulator {
         if prop == VTERM_PROP_ALTSCREEN {
             let isAlternate = (val?.pointee.boolean ?? 0) != 0
             activeBufferKindStorage = isAlternate ? .alternate : .primary
-            refreshEntireActiveBuffer()
+            rebuildActiveBufferFromScreen()
             syncCursorFromState()
             return 1
         }
@@ -189,8 +200,30 @@ public final class TerminalEmulator {
         let newRows = max(1, Int(rows))
         let newCols = max(1, Int(cols))
         resizeBuffers(rows: newRows, cols: newCols)
-        refreshEntireActiveBuffer()
+        rebuildActiveBufferFromScreen()
         syncCursorFromState()
+        return 1
+    }
+
+    fileprivate func handlePushScrollbackLine(cols: Int32, cells: UnsafePointer<VTermScreenCell>?) -> Int32 {
+        guard let cells else { return 1 }
+
+        let count = max(0, Int(cols))
+        guard count > 0 else { return 1 }
+
+        var row: [ScreenCell] = []
+        row.reserveCapacity(count)
+        for index in 0..<count {
+            let cell = convertVTermCell(cells[index])
+            row.append(cell.width <= 0 ? .blank : cell)
+        }
+
+        primaryBuffer.pushScrollbackRow(row, limit: scrollbackLimit)
+        return 1
+    }
+
+    fileprivate func handleClearScrollback() -> Int32 {
+        primaryBuffer.clearScrollback()
         return 1
     }
 
@@ -239,6 +272,7 @@ public final class TerminalEmulator {
         if let screen {
             vterm_screen_flush_damage(screen)
         }
+        rebuildActiveBufferFromScreen()
         syncCursorFromState()
     }
 
@@ -253,11 +287,6 @@ public final class TerminalEmulator {
         }
     }
 
-    private func refreshEntireActiveBuffer() {
-        let dimensions = activeBufferDimensions()
-        refreshRect(startRow: 0, endRow: dimensions.rows, startCol: 0, endCol: dimensions.cols)
-    }
-
     private func activeBufferDimensions() -> (rows: Int, cols: Int) {
         switch activeBufferKindStorage {
         case .primary:
@@ -267,26 +296,20 @@ public final class TerminalEmulator {
         }
     }
 
-    private func refreshRect(startRow: Int, endRow: Int, startCol: Int, endCol: Int) {
+    private func rebuildActiveBufferFromScreen() {
         guard let screen else { return }
 
         let dimensions = activeBufferDimensions()
-
-        let clampedStartRow = max(0, min(startRow, dimensions.rows))
-        let clampedEndRow = max(0, min(endRow, dimensions.rows))
-        let clampedStartCol = max(0, min(startCol, dimensions.cols))
-        let clampedEndCol = max(0, min(endCol, dimensions.cols))
-
-        guard clampedStartRow < clampedEndRow, clampedStartCol < clampedEndCol else {
+        guard dimensions.rows > 0, dimensions.cols > 0 else {
             return
         }
 
-        for row in clampedStartRow..<clampedEndRow {
-            for col in clampedStartCol..<clampedEndCol {
+        for row in 0..<dimensions.rows {
+            for col in 0..<dimensions.cols {
                 var vtermCell = VTermScreenCell()
                 let pos = VTermPos(row: Int32(row), col: Int32(col))
                 let hasCell = vterm_screen_get_cell(screen, pos, &vtermCell)
-                let screenCell = hasCell != 0 ? Self.convert(vtermCell: vtermCell) : .blank
+                let screenCell = hasCell != 0 ? convertVTermCell(vtermCell) : .blank
 
                 mutateActiveBuffer { buffer in
                     buffer.setCell(row: row, col: col, cell: screenCell)
@@ -316,20 +339,58 @@ public final class TerminalEmulator {
         return queue.sync(execute: body)
     }
 
-    private static func convert(vtermCell: VTermScreenCell) -> ScreenCell {
+    private func convertVTermCell(_ vtermCell: VTermScreenCell) -> ScreenCell {
         let width = max(0, Int(vtermCell.width))
-        let text = decodeChars(vtermCell)
-        let styleSignature = styleSignature(from: vtermCell)
+        let text = Self.decodeChars(vtermCell)
+        let styleSignature = Self.styleSignature(from: vtermCell)
+
+        let usesDefaultForeground = Self.colorUsesDefaultForeground(vtermCell.fg)
+        let usesDefaultBackground = Self.colorUsesDefaultBackground(vtermCell.bg)
+
+        var foregroundColor = vtermCell.fg
+        var backgroundColor = vtermCell.bg
+        if let screen {
+            vterm_screen_convert_color_to_rgb(screen, &foregroundColor)
+            vterm_screen_convert_color_to_rgb(screen, &backgroundColor)
+        }
+
+        let style = ScreenCellStyle(
+            foreground: resolveRGBColor(foregroundColor, fallback: .white),
+            background: resolveRGBColor(backgroundColor, fallback: .black),
+            usesDefaultForeground: usesDefaultForeground,
+            usesDefaultBackground: usesDefaultBackground
+        )
 
         if width == 0 {
-            return ScreenCell(text: text, width: 0, styleSignature: styleSignature)
+            return ScreenCell(text: text, width: 0, styleSignature: styleSignature, style: style)
         }
 
         if text.isEmpty {
-            return ScreenCell(text: " ", width: width, styleSignature: styleSignature)
+            return ScreenCell(text: " ", width: width, styleSignature: styleSignature, style: style)
         }
 
-        return ScreenCell(text: text, width: width, styleSignature: styleSignature)
+        return ScreenCell(text: text, width: width, styleSignature: styleSignature, style: style)
+    }
+
+    private func resolveRGBColor(_ color: VTermColor, fallback: ScreenColor) -> ScreenColor {
+        let isIndexed = (color.type & VTermColorBits.typeMask) == VTermColorBits.indexed
+        if isIndexed {
+            return fallback
+        }
+
+        return ScreenColor(
+            red: color.rgb.red,
+            green: color.rgb.green,
+            blue: color.rgb.blue
+        )
+    }
+
+    private static func colorUsesDefaultForeground(_ color: VTermColor) -> Bool {
+        (color.type & VTermColorBits.defaultForeground) != 0
+    }
+
+    private static func colorUsesDefaultBackground(_ color: VTermColor) -> Bool {
+        (color.type & VTermColorBits.defaultBackground) != 0
     }
 
     private static func decodeChars(_ cell: VTermScreenCell) -> String {
