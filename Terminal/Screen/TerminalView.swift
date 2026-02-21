@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -16,10 +17,6 @@ public final class TerminalViewModel: ObservableObject {
         bridge.onScreenBufferUpdated = { [weak self] updatedBuffer in
             self?.buffer = updatedBuffer
         }
-    }
-
-    deinit {
-        bridge.onScreenBufferUpdated = nil
     }
 
     public func resizeIfNeeded(viewSize: CGSize, cellSize: CGSize) {
@@ -93,7 +90,7 @@ public struct TerminalView: View {
     private static func measureCellSize(for font: NSFont) -> CGSize {
         let sample = "W" as NSString
         let width = ceil(sample.size(withAttributes: [.font: font]).width)
-        let height = ceil(NSLayoutManager.defaultLineHeight(for: font))
+        let height = ceil(font.ascender - font.descender + font.leading)
         return CGSize(width: max(1, width), height: max(1, height))
     }
 
