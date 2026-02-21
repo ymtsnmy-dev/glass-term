@@ -125,19 +125,6 @@ public final class PTYProcess {
         let slavePath = String(cString: slaveName)
         emitDebug("[PTYProcess] ptsname=\(slavePath)\n")
 
-        let slave = Darwin.open(slavePath, O_RDWR | O_NOCTTY)
-        guard slave >= 0 else {
-            emitAsyncError("open(slave)", errno: errno)
-            throw makeSystemError("open(slave)")
-        }
-
-        var shouldCloseSlave = true
-        defer {
-            if shouldCloseSlave {
-                _ = Darwin.close(slave)
-            }
-        }
-
         let pid = posixFork()
         guard pid >= 0 else {
             emitAsyncError("fork", errno: errno)
@@ -145,16 +132,10 @@ public final class PTYProcess {
         }
 
         if pid == 0 {
-            launchChildProcess(masterFD: master, slaveFD: slave, rows: rows, cols: cols)
+            launchChildProcess(masterFD: master, slavePath: slavePath, rows: rows, cols: cols)
             _exit(127)
         }
         emitDebug("[PTYProcess] forked child pid=\(pid)\n")
-
-        if Darwin.close(slave) != 0 {
-            emitAsyncError("close(parent slave)", errno: errno)
-            throw makeSystemError("close(parent slave)")
-        }
-        shouldCloseSlave = false
 
         let currentFlags = fcntl(master, F_GETFL)
         guard currentFlags >= 0 else {
@@ -166,6 +147,7 @@ public final class PTYProcess {
             throw makeSystemError("fcntl(F_SETFL)")
         }
         emitDebug("[PTYProcess] master fd configured as non-blocking\n")
+        configureForegroundProcessGroup(masterFD: master, childPID: pid)
 
         stateLock.lock()
         masterFD = master
@@ -223,9 +205,21 @@ public final class PTYProcess {
     }
 
     public func sendCtrlC() throws {
-        let pid = try runningChildPID()
-        guard Darwin.kill(pid, SIGINT) == 0 else {
-            emitAsyncError("kill(SIGINT)", errno: errno)
+        let fd = try runningMasterFD()
+        let child = try runningChildPID()
+
+        let foregroundGroup = tcgetpgrp(fd)
+        if foregroundGroup > 0 {
+            if Darwin.kill(-foregroundGroup, SIGINT) == 0 {
+                return
+            }
+            emitAsyncError("kill(-tcgetpgrp, SIGINT)", errno: errno)
+        } else if foregroundGroup == -1 {
+            emitAsyncError("tcgetpgrp", errno: errno)
+        }
+
+        guard Darwin.kill(child, SIGINT) == 0 else {
+            emitAsyncError("kill(child, SIGINT)", errno: errno)
             throw makeSystemError("kill(SIGINT)")
         }
     }
@@ -321,7 +315,7 @@ public final class PTYProcess {
         }
     }
 
-    private func launchChildProcess(masterFD: Int32, slaveFD: Int32, rows: Int, cols: Int) {
+    private func launchChildProcess(masterFD: Int32, slavePath: String, rows: Int, cols: Int) {
         _ = Darwin.close(masterFD)
 
         guard setsid() >= 0 else {
@@ -329,6 +323,29 @@ public final class PTYProcess {
             childExitWithErrno("setsid")
         }
         emitChildDebug("[PTYProcess child] setsid succeeded\n")
+
+        let slaveFD = Darwin.open(slavePath, O_RDWR)
+        guard slaveFD >= 0 else {
+            emitChildDebug("[PTYProcess child] open(slave) failed\n")
+            childExitWithErrno("open(slave)")
+        }
+        emitChildDebug("[PTYProcess child] open(slave) succeeded fd=\(slaveFD)\n")
+
+        var size = winsize(
+            ws_row: UInt16(clamping: rows),
+            ws_col: UInt16(clamping: cols),
+            ws_xpixel: 0,
+            ws_ypixel: 0
+        )
+        _ = ioctl(slaveFD, TIOCSWINSZ, &size)
+
+        if ioctl(slaveFD, TIOCSCTTY, 0) == 0 {
+            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) succeeded\n")
+        } else if errno == EPERM {
+            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) EPERM; continuing\n")
+        } else {
+            childExitWithErrno("ioctl(TIOCSCTTY)")
+        }
 
         if setpgid(0, 0) != 0 {
             if errno != EPERM {
@@ -341,24 +358,6 @@ public final class PTYProcess {
         }
         emitChildDebug("[PTYProcess child] setpgid/getpgrp check succeeded\n")
 
-        var size = winsize(
-            ws_row: UInt16(clamping: rows),
-            ws_col: UInt16(clamping: cols),
-            ws_xpixel: 0,
-            ws_ypixel: 0
-        )
-        _ = ioctl(slaveFD, TIOCSWINSZ, &size)
-
-        guard ioctl(slaveFD, TIOCSCTTY, 0) == 0 else {
-            childExitWithErrno("ioctl(TIOCSCTTY)")
-        }
-        emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) succeeded\n")
-
-        guard tcsetpgrp(slaveFD, getpgrp()) == 0 else {
-            childExitWithErrno("tcsetpgrp")
-        }
-        emitChildDebug("[PTYProcess child] tcsetpgrp succeeded\n")
-
         guard dup2(slaveFD, STDIN_FILENO) >= 0 else { childExitWithErrno("dup2(STDIN)") }
         guard dup2(slaveFD, STDOUT_FILENO) >= 0 else { childExitWithErrno("dup2(STDOUT)") }
         guard dup2(slaveFD, STDERR_FILENO) >= 0 else { childExitWithErrno("dup2(STDERR)") }
@@ -369,7 +368,10 @@ public final class PTYProcess {
 
         closeExtraFileDescriptors(keeping: [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO])
 
-        var argv: [UnsafeMutablePointer<CChar>?] = [strdup(shellPath), nil]
+        let programName = URL(fileURLWithPath: shellPath).lastPathComponent.isEmpty
+            ? "zsh"
+            : URL(fileURLWithPath: shellPath).lastPathComponent
+        var argv: [UnsafeMutablePointer<CChar>?] = [strdup(programName), strdup("-l"), nil]
 
         var envStrings = environment.map { "\($0.key)=\($0.value)" }
         if envStrings.first(where: { $0.hasPrefix("TERM=") }) == nil {
@@ -796,5 +798,85 @@ public final class PTYProcess {
             }
             _ = Darwin.close(descriptor)
         }
+    }
+
+    private func configureForegroundProcessGroup(masterFD: Int32, childPID: pid_t) {
+        let hasOwnProcessGroup = waitForChildProcessGroupReadiness(childPID: childPID)
+
+        if setpgid(childPID, childPID) == 0 {
+            emitDebug("[PTYProcess] setpgid(parent) succeeded child pid=\(childPID)\n")
+        } else {
+            switch errno {
+            case EACCES:
+                emitDebug("[PTYProcess] setpgid(parent) EACCES; child already grouped\n")
+            case EPERM where hasOwnProcessGroup:
+                emitDebug("[PTYProcess] setpgid(parent) EPERM; child already in its own session/pgrp\n")
+            default:
+                emitAsyncError("setpgid(parent child)", errno: errno)
+            }
+        }
+
+        var lastTCSetPgrpErrno: Int32?
+        var lastTIOCSPGRPErrno: Int32?
+
+        for attempt in 1...20 {
+            if tcsetpgrp(masterFD, childPID) == 0 {
+                emitDebug("[PTYProcess] tcsetpgrp(master) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
+                return
+            }
+            let tcsetErrno = errno
+            lastTCSetPgrpErrno = tcsetErrno
+
+            var processGroup = childPID
+            if ioctl(masterFD, TIOCSPGRP, &processGroup) == 0 {
+                emitDebug("[PTYProcess] ioctl(TIOCSPGRP, master) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
+                return
+            }
+            let ioctlErrno = errno
+            lastTIOCSPGRPErrno = ioctlErrno
+
+            if !isForegroundPgrpRetryable(tcsetErrno) && !isForegroundPgrpRetryable(ioctlErrno) {
+                break
+            }
+            usleep(5_000)
+        }
+
+        if let lastTCSetPgrpErrno {
+            emitAsyncError("tcsetpgrp(master)", errno: lastTCSetPgrpErrno)
+        }
+        if let lastTIOCSPGRPErrno {
+            emitAsyncError("ioctl(TIOCSPGRP, master)", errno: lastTIOCSPGRPErrno)
+        }
+        emitDebug("[PTYProcess] unable to set foreground pgrp on master for child pid=\(childPID)\n")
+    }
+
+    private func isForegroundPgrpRetryable(_ code: Int32) -> Bool {
+        switch code {
+        case EINTR, EPERM, ENOTTY, EINVAL, ESRCH, EACCES:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func waitForChildProcessGroupReadiness(childPID: pid_t) -> Bool {
+        for _ in 0..<40 {
+            let groupID = getpgid(childPID)
+            if groupID == childPID {
+                emitDebug("[PTYProcess] child already has dedicated pgrp=\(groupID)\n")
+                return true
+            }
+            if groupID == -1 {
+                if errno == EINTR {
+                    continue
+                }
+                emitAsyncError("getpgid(child)", errno: errno)
+                return false
+            }
+            usleep(5_000)
+        }
+
+        emitDebug("[PTYProcess] child pgrp readiness timeout pid=\(childPID)\n")
+        return false
     }
 }
