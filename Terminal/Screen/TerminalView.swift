@@ -91,8 +91,11 @@ public struct TerminalView: View {
                         session.sendCtrlC()
                     },
                     onScrollWheel: { event in
+                        let effectiveDeltaY = event.hasPreciseScrollingDeltas
+                            ? event.scrollingDeltaY
+                            : event.deltaY
                         session.handlePointerScroll(
-                            deltaY: event.scrollingDeltaY,
+                            deltaY: effectiveDeltaY,
                             precise: event.hasPreciseScrollingDeltas
                         )
                     },
@@ -128,34 +131,39 @@ public struct TerminalView: View {
                     let fractionFromTop = 1 - (CGFloat(viewportOffsetRows) / CGFloat(maxViewportOffsetRows))
                     let thumbY = maxThumbTravel * fractionFromTop
 
-                    ZStack(alignment: .top) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.12))
-                        Capsule()
-                            .fill(Color.white.opacity(0.7))
-                            .frame(height: thumbHeight)
-                            .offset(y: thumbY)
-                    }
-                    .frame(width: 8, height: trackHeight)
-                    .padding(.trailing, 2)
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                guard maxThumbTravel > 0 else {
-                                    session.setViewportOffsetRows(0)
-                                    return
-                                }
-
-                                let centeredY = value.location.y - (thumbHeight / 2)
-                                let clampedY = min(max(0, centeredY), maxThumbTravel)
-                                let ratioFromTop = clampedY / maxThumbTravel
-                                let targetOffset = Int(round((1 - ratioFromTop) * CGFloat(maxViewportOffsetRows)))
-                                session.setViewportOffsetRows(targetOffset)
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            ZStack(alignment: .top) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.12))
+                                Capsule()
+                                    .fill(Color.white.opacity(0.7))
+                                    .frame(height: thumbHeight)
+                                    .offset(y: thumbY)
                             }
-                    )
+                            .frame(width: 8, height: trackHeight)
+                            .padding(.trailing, 2)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        guard maxThumbTravel > 0 else {
+                                            session.setViewportOffsetRows(0)
+                                            return
+                                        }
+
+                                        let centeredY = value.location.y - (thumbHeight / 2)
+                                        let clampedY = min(max(0, centeredY), maxThumbTravel)
+                                        let ratioFromTop = clampedY / maxThumbTravel
+                                        let targetOffset = Int(round((1 - ratioFromTop) * CGFloat(maxViewportOffsetRows)))
+                                        session.setViewportOffsetRows(targetOffset)
+                                    }
+                            )
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
             }
             .clipped()
@@ -173,8 +181,12 @@ public struct TerminalView: View {
     }
 
     private static func measureCellSize(for font: NSFont) -> CGSize {
-        let width = ("W" as NSString).size(withAttributes: [.font: font]).width
-        let height = font.ascender - font.descender + font.leading
+        let rawWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+        let rawHeight = font.ascender - font.descender + font.leading
+
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let width = ceil(rawWidth * scale) / scale
+        let height = ceil(rawHeight * scale) / scale
         return CGSize(width: max(1, width), height: max(1, height))
     }
 
@@ -410,10 +422,11 @@ public struct TerminalView: View {
         if isSelecting {
             selectionExtent = position
             let dragged = selectionDidDrag
+            let isSingleCellSelection = (selectionAnchor ?? position) == position
             isSelecting = false
             selectionDidDrag = false
 
-            if !dragged {
+            if !dragged || isSingleCellSelection {
                 clearSelection()
                 session.handlePointerCursorMove(
                     targetDisplayRow: position.displayRow,
@@ -799,6 +812,10 @@ private final class KeyCaptureView: NSView, NSTextInputClient {
     override func becomeFirstResponder() -> Bool { true }
 
     override func keyDown(with event: NSEvent) {
+        if hasMarkedText() {
+            interpretKeyEvents([event])
+            return
+        }
         if onKeyDown?(event) == true {
             return
         }
@@ -855,6 +872,10 @@ private final class KeyCaptureView: NSView, NSTextInputClient {
     }
 
     override func doCommand(by selector: Selector) {
+        if hasMarkedText() {
+            super.doCommand(by: selector)
+            return
+        }
         if onCommandSelector?(selector) == true {
             return
         }
