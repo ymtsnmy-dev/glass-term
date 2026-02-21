@@ -290,6 +290,16 @@ public final class PTYProcess {
         }
         emitChildDebug("[PTYProcess child] setsid succeeded\n")
 
+        if setpgid(0, 0) != 0 {
+            if errno != EPERM {
+                childExitWithErrno("setpgid")
+            }
+        }
+        guard getpgrp() == getpid() else {
+            emitChildDebug("[PTYProcess child] setpgid did not place child in its own group\n")
+            _exit(127)
+        }
+
         let slaveFD = Darwin.open(slavePath, O_RDWR)
         guard slaveFD >= 0 else {
             childExitWithErrno("open(slave)")
@@ -304,12 +314,13 @@ public final class PTYProcess {
         )
         _ = ioctl(slaveFD, TIOCSWINSZ, &size)
 
-        if ioctl(slaveFD, TIOCSCTTY, 0) == 0 {
-            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) succeeded\n")
-        } else if errno == EPERM {
-            emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) returned EPERM; continuing\n")
-        } else {
+        guard ioctl(slaveFD, TIOCSCTTY, 0) == 0 else {
             childExitWithErrno("ioctl(TIOCSCTTY)")
+        }
+        emitChildDebug("[PTYProcess child] ioctl(TIOCSCTTY) succeeded\n")
+
+        guard tcsetpgrp(slaveFD, getpgrp()) == 0 else {
+            childExitWithErrno("tcsetpgrp")
         }
 
         guard dup2(slaveFD, STDIN_FILENO) >= 0 else { childExitWithErrno("dup2(STDIN)") }
@@ -319,6 +330,8 @@ public final class PTYProcess {
         if slaveFD > STDERR_FILENO {
             _ = Darwin.close(slaveFD)
         }
+
+        closeExtraFileDescriptors(keeping: [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO])
 
         var argv: [UnsafeMutablePointer<CChar>?] = [strdup(shellPath), nil]
 
@@ -626,6 +639,19 @@ public final class PTYProcess {
     private func emitChildDebug(_ message: String) {
         message.withCString { ptr in
             _ = Darwin.write(STDERR_FILENO, ptr, strlen(ptr))
+        }
+    }
+
+    private func closeExtraFileDescriptors(keeping: Set<Int32>) {
+        let maxFD = getdtablesize()
+        guard maxFD > 0 else { return }
+
+        for fd in 0..<maxFD {
+            let descriptor = Int32(fd)
+            if keeping.contains(descriptor) {
+                continue
+            }
+            _ = Darwin.close(descriptor)
         }
     }
 }
