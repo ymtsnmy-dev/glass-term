@@ -76,7 +76,7 @@ public final class PTYProcess {
         env: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.shellPath = shellPath
-        self.environment = env
+        self.environment = Self.normalizedEnvironment(env)
     }
 
     deinit {
@@ -408,6 +408,43 @@ public final class PTYProcess {
 
         Darwin.perror("execve")
         childExitWithErrno("execve")
+    }
+
+    private static func normalizedEnvironment(_ env: [String: String]) -> [String: String] {
+        var normalized = env
+        let utf8Locale = preferredUTF8Locale(from: normalized)
+
+        if !isUTF8Locale(normalized["LANG"]) {
+            normalized["LANG"] = utf8Locale
+        }
+        if !isUTF8Locale(normalized["LC_CTYPE"]) {
+            normalized["LC_CTYPE"] = utf8Locale
+        }
+        if !isUTF8Locale(normalized["LC_ALL"]) {
+            normalized["LC_ALL"] = utf8Locale
+        }
+
+        return normalized
+    }
+
+    private static func preferredUTF8Locale(from env: [String: String]) -> String {
+        for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            if let value = env[key], isUTF8Locale(value) {
+                return value
+            }
+        }
+
+        if let lang = env["LANG"], !lang.isEmpty {
+            let base = lang.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? lang
+            return "\(base).UTF-8"
+        }
+
+        return "en_US.UTF-8"
+    }
+
+    private static func isUTF8Locale(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty else { return false }
+        return value.localizedCaseInsensitiveContains("UTF-8") || value.localizedCaseInsensitiveContains("UTF8")
     }
 
     private func startReadLoop(fd: Int32) {

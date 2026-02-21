@@ -83,6 +83,42 @@ final class TerminalEmulatorTests: XCTestCase {
         XCTAssertTrue(snapshot.contains("MAIN"))
         XCTAssertFalse(snapshot.contains("ALT"))
     }
+
+    func testPrimaryBufferAccumulatesScrollbackRows() {
+        let emulator = TerminalEmulator(rows: 4, cols: 10)
+
+        for index in 0..<20 {
+            emulator.feed(Data("line\(index)\n".utf8))
+        }
+
+        let snapshot = emulator.snapshot()
+        XCTAssertGreaterThan(snapshot.scrollbackRows, 0)
+        XCTAssertGreaterThan(snapshot.totalRows, snapshot.rows)
+    }
+
+    func testForegroundColorIsCapturedFromSGR() {
+        let emulator = TerminalEmulator(rows: 2, cols: 10)
+
+        emulator.feed(Data("\u{001B}[31mR\u{001B}[0m".utf8))
+
+        let cell = emulator.snapshot()[0, 0]
+        XCTAssertFalse(cell.style.usesDefaultForeground)
+        XCTAssertTrue(cell.style.usesDefaultBackground)
+        XCTAssertGreaterThan(Int(cell.style.foreground.red), Int(cell.style.foreground.green))
+        XCTAssertGreaterThan(Int(cell.style.foreground.red), Int(cell.style.foreground.blue))
+    }
+
+    func testBackgroundColorIsCapturedFromSGR() {
+        let emulator = TerminalEmulator(rows: 2, cols: 10)
+
+        emulator.feed(Data("\u{001B}[44mB\u{001B}[0m".utf8))
+
+        let cell = emulator.snapshot()[0, 0]
+        XCTAssertTrue(cell.style.usesDefaultForeground)
+        XCTAssertFalse(cell.style.usesDefaultBackground)
+        XCTAssertGreaterThan(Int(cell.style.background.blue), Int(cell.style.background.red))
+        XCTAssertGreaterThan(Int(cell.style.background.blue), Int(cell.style.background.green))
+    }
 }
 
 private extension ScreenBuffer {
