@@ -6,8 +6,42 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		42B816462F49A74100341206 /* state.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B8163D2F49A74100341206 /* state.c */; };
+		42B816472F49A74100341206 /* screen.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B8163E2F49A74100341206 /* screen.c */; };
+		42B816482F49A74100341206 /* vterm.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B8163F2F49A74100341206 /* vterm.c */; };
+		42B816492F49A74100341206 /* encoding.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816402F49A74100341206 /* encoding.c */; };
+		42B8164A2F49A74100341206 /* mouse.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816412F49A74100341206 /* mouse.c */; };
+		42B8164B2F49A74100341206 /* unicode.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816422F49A74100341206 /* unicode.c */; };
+		42B8164C2F49A74100341206 /* pen.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816432F49A74100341206 /* pen.c */; };
+		42B8164D2F49A74100341206 /* keyboard.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816442F49A74100341206 /* keyboard.c */; };
+		42B8164E2F49A74100341206 /* parser.c in Sources */ = {isa = PBXBuildFile; fileRef = 42B816452F49A74100341206 /* parser.c */; };
+		42F100042F4AB00100341206 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 42F100032F4AB00100341206 /* XCTest.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		42F1000A2F4AB00100341206 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 42B815432F4985E100341206 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 42B8154A2F4985E100341206;
+			remoteInfo = "glass-term";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		42B8154B2F4985E100341206 /* glass-term.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "glass-term.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		42B8163D2F49A74100341206 /* state.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = state.c; path = Vendor/libvterm/src/state.c; sourceTree = "<group>"; };
+		42B8163E2F49A74100341206 /* screen.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = screen.c; path = Vendor/libvterm/src/screen.c; sourceTree = "<group>"; };
+		42B8163F2F49A74100341206 /* vterm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = vterm.c; path = Vendor/libvterm/src/vterm.c; sourceTree = "<group>"; };
+		42B816402F49A74100341206 /* encoding.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = encoding.c; path = Vendor/libvterm/src/encoding.c; sourceTree = "<group>"; };
+		42B816412F49A74100341206 /* mouse.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = mouse.c; path = Vendor/libvterm/src/mouse.c; sourceTree = "<group>"; };
+		42B816422F49A74100341206 /* unicode.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = unicode.c; path = Vendor/libvterm/src/unicode.c; sourceTree = "<group>"; };
+		42B816432F49A74100341206 /* pen.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = pen.c; path = Vendor/libvterm/src/pen.c; sourceTree = "<group>"; };
+		42B816442F49A74100341206 /* keyboard.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = keyboard.c; path = Vendor/libvterm/src/keyboard.c; sourceTree = "<group>"; };
+		42B816452F49A74100341206 /* parser.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = parser.c; path = Vendor/libvterm/src/parser.c; sourceTree = "<group>"; };
+		42F100022F4AB00100341206 /* glass-termTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "glass-termTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		42F100032F4AB00100341206 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/MacOSX.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,9 +50,19 @@
 			path = "glass-term";
 			sourceTree = "<group>";
 		};
+		42C4D0EE2F4A300100341206 /* ../Terminal/Emulator */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Terminal/Emulator;
+			sourceTree = "<group>";
+		};
 		42D74F222F49D30000341206 /* ../Terminal/PTY */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../Terminal/PTY;
+			sourceTree = "<group>";
+		};
+		42F100012F4AB00100341206 /* glass-termTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "glass-termTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,15 +75,35 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		42F100052F4AB00100341206 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42F100042F4AB00100341206 /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		42B815422F4985E100341206 = {
 			isa = PBXGroup;
 			children = (
+				42B816402F49A74100341206 /* encoding.c */,
+				42B816442F49A74100341206 /* keyboard.c */,
+				42B816412F49A74100341206 /* mouse.c */,
+				42B816452F49A74100341206 /* parser.c */,
+				42B816432F49A74100341206 /* pen.c */,
+				42B8163E2F49A74100341206 /* screen.c */,
+				42B8163D2F49A74100341206 /* state.c */,
+				42B816422F49A74100341206 /* unicode.c */,
+				42B8163F2F49A74100341206 /* vterm.c */,
 				42B8154D2F4985E100341206 /* glass-term */,
+				42C4D0EE2F4A300100341206 /* ../Terminal/Emulator */,
 				42D74F222F49D30000341206 /* ../Terminal/PTY */,
+				42F100012F4AB00100341206 /* glass-termTests */,
 				42B8154C2F4985E100341206 /* Products */,
+				42B8164F2F49A92F00341206 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -47,8 +111,17 @@
 			isa = PBXGroup;
 			children = (
 				42B8154B2F4985E100341206 /* glass-term.app */,
+				42F100022F4AB00100341206 /* glass-termTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		42B8164F2F49A92F00341206 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				42F100032F4AB00100341206 /* XCTest.framework */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -68,6 +141,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				42B8154D2F4985E100341206 /* glass-term */,
+				42C4D0EE2F4A300100341206 /* ../Terminal/Emulator */,
 				42D74F222F49D30000341206 /* ../Terminal/PTY */,
 			);
 			name = "glass-term";
@@ -76,6 +150,29 @@
 			productName = "glass-term";
 			productReference = 42B8154B2F4985E100341206 /* glass-term.app */;
 			productType = "com.apple.product-type.application";
+		};
+		42F100082F4AB00100341206 /* glass-termTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 42F1000B2F4AB00100341206 /* Build configuration list for PBXNativeTarget "glass-termTests" */;
+			buildPhases = (
+				42F100062F4AB00100341206 /* Sources */,
+				42F100052F4AB00100341206 /* Frameworks */,
+				42F100072F4AB00100341206 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				42F100092F4AB00100341206 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				42F100012F4AB00100341206 /* glass-termTests */,
+			);
+			name = "glass-termTests";
+			packageProductDependencies = (
+			);
+			productName = "glass-termTests";
+			productReference = 42F100022F4AB00100341206 /* glass-termTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -89,6 +186,10 @@
 				TargetAttributes = {
 					42B8154A2F4985E100341206 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					42F100082F4AB00100341206 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 42B8154A2F4985E100341206;
 					};
 				};
 			};
@@ -107,12 +208,20 @@
 			projectRoot = "";
 			targets = (
 				42B8154A2F4985E100341206 /* glass-term */,
+				42F100082F4AB00100341206 /* glass-termTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		42B815492F4985E100341206 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		42F100072F4AB00100341206 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -126,10 +235,34 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				42B816462F49A74100341206 /* state.c in Sources */,
+				42B816472F49A74100341206 /* screen.c in Sources */,
+				42B816482F49A74100341206 /* vterm.c in Sources */,
+				42B816492F49A74100341206 /* encoding.c in Sources */,
+				42B8164A2F49A74100341206 /* mouse.c in Sources */,
+				42B8164B2F49A74100341206 /* unicode.c in Sources */,
+				42B8164C2F49A74100341206 /* pen.c in Sources */,
+				42B8164D2F49A74100341206 /* keyboard.c in Sources */,
+				42B8164E2F49A74100341206 /* parser.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		42F100062F4AB00100341206 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		42F100092F4AB00100341206 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 42B8154A2F4985E100341206 /* glass-term */;
+			targetProxy = 42F1000A2F4AB00100341206 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		42B815542F4985E200341206 /* Debug */ = {
@@ -185,6 +318,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Vendor/libvterm/include/**";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -192,6 +326,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/glass-term/BridgingHeader.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -243,12 +378,14 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Vendor/libvterm/include/**";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/glass-term/BridgingHeader.h";
 			};
 			name = Release;
 		};
@@ -316,6 +453,51 @@
 			};
 			name = Release;
 		};
+		42F1000C2F4AB00100341206 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6H7P3DCR2X;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.ymtsnmy.glass-termTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/glass-term.app/Contents/MacOS/glass-term";
+				TEST_TARGET_NAME = "glass-term";
+			};
+			name = Debug;
+		};
+		42F1000D2F4AB00100341206 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6H7P3DCR2X;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.ymtsnmy.glass-termTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/glass-term.app/Contents/MacOS/glass-term";
+				TEST_TARGET_NAME = "glass-term";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -333,6 +515,15 @@
 			buildConfigurations = (
 				42B815572F4985E200341206 /* Debug */,
 				42B815582F4985E200341206 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		42F1000B2F4AB00100341206 /* Build configuration list for PBXNativeTarget "glass-termTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				42F1000C2F4AB00100341206 /* Debug */,
+				42F1000D2F4AB00100341206 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
