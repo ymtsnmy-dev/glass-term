@@ -16,6 +16,11 @@
 			path = "glass-term";
 			sourceTree = "<group>";
 		};
+		42D74F222F49D30000341206 /* ../Terminal/PTY */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Terminal/PTY;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +38,7 @@
 			isa = PBXGroup;
 			children = (
 				42B8154D2F4985E100341206 /* glass-term */,
+				42D74F222F49D30000341206 /* ../Terminal/PTY */,
 				42B8154C2F4985E100341206 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,6 +68,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				42B8154D2F4985E100341206 /* glass-term */,
+				42D74F222F49D30000341206 /* ../Terminal/PTY */,
 			);
 			name = "glass-term";
 			packageProductDependencies = (
