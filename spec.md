@@ -1,5 +1,5 @@
 # ブロック型ターミナル
-## macOS向けアプリケーション仕様書（統合版 v2.0）
+## macOS向けアプリケーション仕様書（統合版 v3.0）
 
 ---
 
@@ -21,8 +21,9 @@
 
 - 対応OS: macOS 13以降
 - 実装技術: SwiftUI + 必要に応じてAppKit
-- シェル: zsh（デフォルト）、bash等も動作可能
+- シェル: zsh（デフォルト）
 - 配布形式: `.app`
+- ターミナルエミュレーション: **libvtermを使用**
 
 ---
 
@@ -40,18 +41,17 @@ Block Abstraction Layer
 ├─ BlockBoundaryManager
 └─ OutputBuffer
 
-Terminal Emulation Layer
-├─ ANSI Parser
-├─ ScreenBuffer
-├─ CursorState
-└─ ScrollbackBuffer
+Terminal Emulator Layer
+├─ libvterm (C library)
+├─ TerminalEmulator wrapper
+└─ ScreenBuffer abstraction
 
 PTY Layer
 ├─ posix_openpt
 ├─ fork / exec
 └─ read / write
 
-Shell (zsh / bash)
+Shell (zsh)
 ```
 
 ---
@@ -60,7 +60,9 @@ Shell (zsh / bash)
 
 ### 4.1 ANSI / VT100対応
 
-最低限以下をサポートする。
+ANSI解釈は**libvtermに委譲する**。
+
+最低限以下が動作すること:
 
 - カーソル移動（CSI）
 - SGR（色・装飾）
@@ -71,6 +73,8 @@ Shell (zsh / bash)
 - Alternate Screen Buffer
 
 ### 4.2 Screen Buffer設計
+
+libvtermの内部バッファをSwift側で抽象化する。
 
 ```swift
 struct ScreenCell {
@@ -87,9 +91,6 @@ class ScreenBuffer {
     var cursorPosition: (row: Int, col: Int)
 }
 ```
-
-- ウィンドウリサイズ時に再構築
-- Alternate Buffer対応
 
 ### 4.3 対話型アプリ対応（必須）
 
@@ -153,15 +154,13 @@ enum BlockStatus {
 
 ### 6.2 ブロック確定方式
 
-正式仕様:
-
 1. ユーザー入力送信
 2. シェルが新プロンプトを表示
 3. プロンプト検出で前Block確定
 
-### 6.3 プロンプト検出（推奨方式）
+### 6.3 プロンプト検出方式
 
-シェルに専用PS1を設定:
+PS1マーカー戦略を使用する。
 
 ```bash
 export PS1="<<<BLOCK_PROMPT>>> "
@@ -178,8 +177,8 @@ enum DisplayMode {
 }
 ```
 
-- `blockMode`: 通常ブロック表示
-- `rawMode`: Alternate Screen有効時
+- `blockMode`: ブロック表示
+- `rawMode`: Alternate Screen時
 
 ## 8. UI仕様
 
@@ -200,14 +199,6 @@ total 32
 drwxr-xr-x ...
 ```
 
-要素:
-
-- ステータス表示
-- 実行時刻
-- Copyボタン
-- コマンド（強調）
-- 出力（等幅フォント）
-
 ## 9. Copy Stack仕様
 
 ### 9.1 データ構造
@@ -224,29 +215,7 @@ class CopyQueueManager {
 }
 ```
 
-### 9.2 コピー仕様
-
-単体コピー:
-
-- `NSPasteboard` へ書き込み
-- `CopyQueue` に追加
-
-Copy All:
-
-- 順序通り連結
-- クリップボードへ書き込み
-
-### 9.3 フォーマット例
-
-```text
---- BLOCK ---
-$ git status
-
-On branch main
-Your branch is up to date with 'origin/main'.
-```
-
-## 10. 入力仕様（完全互換）
+## 10. 入力仕様
 
 対応キー:
 
@@ -261,70 +230,37 @@ Your branch is up to date with 'origin/main'.
 
 - 最低10,000行保持
 - リングバッファ方式
-- Rawモード時も保持
 
 ## 12. ウィンドウリサイズ
 
 - `SIGWINCH`送信
-- `ScreenBuffer`再構築
-- 即時再描画
+- libvterm resize反映
+- 再描画
 
 ## 13. テーマ仕様
 
-### 13.1 Theme構造
-
-```swift
-struct Theme {
-    backgroundMaterial: MaterialType
-    blockBackgroundColor: Color
-    blockBorderColor: Color
-    fontColor: Color
-    errorColor: Color
-    cornerRadius: CGFloat
-}
-```
-
-### 13.2 Defaultテーマ
-
-- 単色背景
-- ダーク/ライト
-
-### 13.3 Glassテーマ
+### 13.1 Glassテーマ
 
 - `NSVisualEffectView`
 - `material: .hudWindow`
 - 半透明ブロック
-- 薄い境界線
 - `cornerRadius` 16以上
 
 ## 14. パフォーマンス要件
 
 - 60fps維持
-- 出力10MBでもクラッシュしない
-- 描画バッチ処理
-- UI更新はフレーム単位で制御
+- 10MB出力でクラッシュしない
+- バッチ描画
 
 ## 15. エラー処理
 
 - シェル終了時: `isAlive = false`
 - `Ctrl+C`: `interrupted`状態
-- 異常終了メッセージ表示
 
-## 16. 永続化（MVPでは未対応）
-
-将来:
-
-- Block JSON保存
-- セッション復元
-
-## 17. MVP完成条件（最終定義）
+## 16. MVP完成条件
 
 以下すべて満たす:
 
-- macOSで正常起動
-- 3タブ以上安定動作
-- コマンド1回 = 1Block
-- Copy Stack順序保持
 - `vim`正常動作
 - `top`正常動作
 - `ssh`可能
@@ -332,28 +268,22 @@ struct Theme {
 - 10,000行スクロール
 - Rawモード自動切替
 - Glassテーマ適用可能
+- Copy Stack順序保持
 
-## 18. 技術的リスク
+## 17. 実装戦略（確定）
 
-- ANSI実装難易度
-- Alternate Screen処理
-- プロンプト検出精度
-- 大量出力負荷
+- libvtermを使用
+- ANSI自前実装は禁止
+- レイヤー分離で実装
+- 一度に1レイヤーのみ実装
 
-## 19. 実装戦略（推奨）
-
-- 既存ターミナルエミュレーション実装の流用を検討
-- 自前実装は高コスト
-- その上にBlock抽象レイヤーを構築
-
-## 20. 結論
+## 18. 結論
 
 本設計は:
 
-- フルターミナル互換
-- ブロックUI抽象
-- Raw/Blockモード共存
-- Copy Stack機能搭載
-- テーマ切替対応
+- libvtermによるフル互換エミュレータ
+- その上にBlock抽象
+- Raw/Block共存
+- macOSネイティブUI
 
-単なるUI変更ではなく、完全なターミナルエミュレータの上に構築される拡張UXである。
+完全なターミナルエミュレータの上に構築される拡張UXである。
