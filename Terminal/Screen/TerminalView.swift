@@ -1,49 +1,8 @@
 import AppKit
-import Combine
 import SwiftUI
 
-@MainActor
-public final class TerminalViewModel: ObservableObject {
-    @Published public private(set) var buffer: ScreenBuffer
-
-    private let bridge: PTYEmulatorBridge
-    private var lastRequestedSize: (rows: Int, cols: Int)?
-
-    public init(bridge: PTYEmulatorBridge) {
-        self.bridge = bridge
-        self.buffer = bridge.snapshot()
-
-        bridge.screenUpdateHandlerQueue = .main
-        bridge.onScreenBufferUpdated = { [weak self] updatedBuffer in
-            self?.buffer = updatedBuffer
-        }
-    }
-
-    public func resizeIfNeeded(viewSize: CGSize, cellSize: CGSize) {
-        guard viewSize.width > 0, viewSize.height > 0 else { return }
-        guard cellSize.width > 0, cellSize.height > 0 else { return }
-
-        let cols = max(1, Int(floor(viewSize.width / cellSize.width)))
-        let rows = max(1, Int(floor(viewSize.height / cellSize.height)))
-
-        if let lastRequestedSize,
-           lastRequestedSize.rows == rows,
-           lastRequestedSize.cols == cols {
-            return
-        }
-        lastRequestedSize = (rows: rows, cols: cols)
-
-        do {
-            try bridge.resize(rows: rows, cols: cols)
-        } catch {
-            bridge.emulator.resize(rows: rows, cols: cols)
-            buffer = bridge.snapshot()
-        }
-    }
-}
-
 public struct TerminalView: View {
-    @ObservedObject private var model: TerminalViewModel
+    @ObservedObject private var session: TerminalSessionController
 
     private let font: Font
     private let cellSize: CGSize
@@ -52,7 +11,7 @@ public struct TerminalView: View {
     private let cursorColor: Color
 
     public init(
-        model: TerminalViewModel,
+        session: TerminalSessionController,
         fontSize: CGFloat = 14,
         textColor: Color = .white,
         backgroundColor: Color = .black,
@@ -60,7 +19,7 @@ public struct TerminalView: View {
     ) {
         let resolvedFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
 
-        self.model = model
+        self.session = session
         self.font = .custom(resolvedFont.fontName, size: resolvedFont.pointSize)
         self.cellSize = Self.measureCellSize(for: resolvedFont)
         self.textColor = textColor
@@ -71,18 +30,32 @@ public struct TerminalView: View {
     public var body: some View {
         GeometryReader { proxy in
             let viewSize = proxy.size
+            let _ = session.renderVersion
+            let buffer = session.snapshot()
 
-            Canvas(rendersAsynchronously: true) { context, canvasSize in
-                drawBackground(context: &context, size: canvasSize)
-                drawScreenBuffer(context: &context, size: canvasSize, buffer: model.buffer)
-                drawCursor(context: &context, buffer: model.buffer)
+            ZStack {
+                Canvas(rendersAsynchronously: true) { context, canvasSize in
+                    drawBackground(context: &context, size: canvasSize)
+                    drawScreenBuffer(context: &context, size: canvasSize, buffer: buffer)
+                    drawCursor(context: &context, buffer: buffer)
+                }
+
+                TerminalKeyInputView(
+                    onInput: { text in
+                        session.sendInput(text)
+                    },
+                    onCtrlC: {
+                        session.sendCtrlC()
+                    }
+                )
             }
             .clipped()
             .onAppear {
-                model.resizeIfNeeded(viewSize: viewSize, cellSize: cellSize)
+                session.startIfNeeded()
+                session.resizeIfNeeded(viewSize: viewSize, cellSize: cellSize)
             }
             .onChange(of: viewSize) { newSize in
-                model.resizeIfNeeded(viewSize: newSize, cellSize: cellSize)
+                session.resizeIfNeeded(viewSize: newSize, cellSize: cellSize)
             }
         }
     }
@@ -205,5 +178,108 @@ public struct TerminalView: View {
             .foregroundStyle(color)
 
         context.draw(rendered, at: origin, anchor: .topLeading)
+    }
+}
+
+private struct TerminalKeyInputView: NSViewRepresentable {
+    let onInput: (String) -> Void
+    let onCtrlC: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onInput: onInput, onCtrlC: onCtrlC)
+    }
+
+    func makeNSView(context: Context) -> KeyCaptureView {
+        let view = KeyCaptureView()
+        view.onKeyDown = context.coordinator.handleKeyDown
+        view.focusIfPossible()
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyCaptureView, context: Context) {
+        nsView.onKeyDown = context.coordinator.handleKeyDown
+        nsView.focusIfPossible()
+    }
+
+    final class Coordinator {
+        private let onInput: (String) -> Void
+        private let onCtrlC: () -> Void
+
+        init(onInput: @escaping (String) -> Void, onCtrlC: @escaping () -> Void) {
+            self.onInput = onInput
+            self.onCtrlC = onCtrlC
+        }
+
+        func handleKeyDown(_ event: NSEvent) {
+            if event.modifierFlags.contains(.control),
+               let controlCharacter = event.charactersIgnoringModifiers?.lowercased(),
+               controlCharacter == "c" {
+                onCtrlC()
+                return
+            }
+
+            switch event.keyCode {
+            case 36, 76:
+                onInput("\r")
+                return
+            case 48:
+                onInput("\t")
+                return
+            case 51:
+                onInput("\u{7F}")
+                return
+            case 53:
+                onInput("\u{1B}")
+                return
+            case 123:
+                onInput("\u{1B}[D")
+                return
+            case 124:
+                onInput("\u{1B}[C")
+                return
+            case 125:
+                onInput("\u{1B}[B")
+                return
+            case 126:
+                onInput("\u{1B}[A")
+                return
+            default:
+                break
+            }
+
+            guard let characters = event.characters, !characters.isEmpty else {
+                return
+            }
+            onInput(characters)
+        }
+    }
+}
+
+private final class KeyCaptureView: NSView {
+    var onKeyDown: ((NSEvent) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        onKeyDown?(event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        focusIfPossible()
+    }
+
+    func focusIfPossible() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            if window.firstResponder !== self {
+                window.makeFirstResponder(self)
+            }
+        }
     }
 }
