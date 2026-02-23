@@ -84,16 +84,43 @@ final class TerminalEmulatorTests: XCTestCase {
         XCTAssertFalse(snapshot.contains("ALT"))
     }
 
-    func testPrimaryBufferAccumulatesScrollbackRows() {
-        let emulator = TerminalEmulator(rows: 4, cols: 10)
+    func testScrollbackBufferKeepsMostRecentLinesWithinCapacity() {
+        let scrollback = ScrollbackBuffer(capacity: 3)
 
-        for index in 0..<20 {
-            emulator.feed(Data("line\(index)\n".utf8))
+        for index in 0..<5 {
+            scrollback.append([ScreenCell(text: "\(index)", width: 1)])
         }
 
-        let snapshot = emulator.snapshot()
-        XCTAssertGreaterThan(snapshot.scrollbackRows, 0)
-        XCTAssertGreaterThan(snapshot.totalRows, snapshot.rows)
+        let snapshot = scrollback.snapshot()
+        XCTAssertEqual(snapshot.count, 3)
+        XCTAssertEqual(snapshot.map { $0.first?.text ?? "" }, ["2", "3", "4"])
+    }
+
+    func testScrollbackPushlinePausesDuringAlternateScreen() {
+        let emulator = TerminalEmulator(rows: 3, cols: 12)
+        var pushedLineCount = 0
+
+        emulator.onScrollbackLine = { _ in
+            pushedLineCount += 1
+        }
+
+        for index in 0..<10 {
+            emulator.feed(Data("p\(index)\n".utf8))
+        }
+        let beforeAlternate = pushedLineCount
+        XCTAssertGreaterThan(beforeAlternate, 0)
+
+        emulator.feed(Data("\u{001B}[?1049h".utf8))
+        for index in 0..<10 {
+            emulator.feed(Data("a\(index)\n".utf8))
+        }
+        XCTAssertEqual(pushedLineCount, beforeAlternate)
+
+        emulator.feed(Data("\u{001B}[?1049l".utf8))
+        for index in 0..<10 {
+            emulator.feed(Data("r\(index)\n".utf8))
+        }
+        XCTAssertGreaterThan(pushedLineCount, beforeAlternate)
     }
 
     func testForegroundColorIsCapturedFromSGR() {

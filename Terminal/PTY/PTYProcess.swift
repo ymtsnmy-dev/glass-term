@@ -63,7 +63,7 @@ public final class PTYProcess {
     private var running = false
     private var exitNotified = false
     private var didReceiveInitialOutput = false
-    private var slavePathForJobControl: String?
+    private var shellConfigDirectoryPath: String?
 
     private var readSource: DispatchSourceRead?
     private var waitTimer: DispatchSourceTimer?
@@ -126,6 +126,8 @@ public final class PTYProcess {
         let slavePath = String(cString: slaveName)
         emitDebug("[PTYProcess] ptsname=\(slavePath)\n")
 
+        let shellConfigDirectoryPath = try prepareShellConfigDirectory()
+
         let pid = posixFork()
         guard pid >= 0 else {
             emitAsyncError("fork", errno: errno)
@@ -133,7 +135,13 @@ public final class PTYProcess {
         }
 
         if pid == 0 {
-            launchChildProcess(masterFD: master, slavePath: slavePath, rows: rows, cols: cols)
+            launchChildProcess(
+                masterFD: master,
+                slavePath: slavePath,
+                rows: rows,
+                cols: cols,
+                shellConfigDirectoryPath: shellConfigDirectoryPath
+            )
             _exit(127)
         }
         emitDebug("[PTYProcess] forked child pid=\(pid)\n")
@@ -148,7 +156,6 @@ public final class PTYProcess {
             throw makeSystemError("fcntl(F_SETFL)")
         }
         emitDebug("[PTYProcess] master fd configured as non-blocking\n")
-        configureForegroundProcessGroup(slavePath: slavePath, childPID: pid)
 
         stateLock.lock()
         masterFD = master
@@ -156,7 +163,7 @@ public final class PTYProcess {
         running = true
         exitNotified = false
         didReceiveInitialOutput = false
-        slavePathForJobControl = slavePath
+        self.shellConfigDirectoryPath = shellConfigDirectoryPath
         stateLock.unlock()
 
         shouldCloseMaster = false
@@ -209,35 +216,68 @@ public final class PTYProcess {
     public func sendCtrlC() throws {
         let master = try runningMasterFD()
         let child = try runningChildPID()
+        var delivered = false
 
-        if let pfd = openJobControlSlaveFD() {
-            defer { _ = Darwin.close(pfd) }
-            let foregroundGroup = tcgetpgrp(pfd)
+        var foregroundGroup: pid_t = 0
+        if ioctl(master, TIOCGPGRP, &foregroundGroup) == 0 {
             if foregroundGroup > 0 {
                 if Darwin.kill(-foregroundGroup, SIGINT) == 0 {
-                    return
+                    delivered = true
+                } else {
+                    if errno != ESRCH {
+                        emitAsyncError("kill(-TIOCGPGRP(master), SIGINT)", errno: errno)
+                    }
                 }
-                emitAsyncError("kill(-tcgetpgrp(slave), SIGINT)", errno: errno)
-            } else if foregroundGroup == -1 {
-                emitAsyncError("tcgetpgrp(slave)", errno: errno)
             }
+        } else if errno != ENOTTY && errno != EINVAL {
+            emitAsyncError("ioctl(TIOCGPGRP)", errno: errno)
         }
 
         var ctrlC = UInt8(0x03)
-        while true {
+        var wroteCtrlC = false
+        for _ in 0..<64 {
             let written = Darwin.write(master, &ctrlC, 1)
             if written == 1 {
-                return
+                wroteCtrlC = true
+                break
             }
-            if written == -1, errno == EINTR {
+            if written == -1, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK {
+                usleep(1_000)
                 continue
             }
             break
         }
 
-        guard Darwin.kill(child, SIGINT) == 0 else {
+        if wroteCtrlC {
+            delivered = true
+        } else {
+            if errno != EAGAIN && errno != EWOULDBLOCK {
+                emitAsyncError("write(ctrl-c)", errno: errno)
+            }
+        }
+
+        let childGroup = getpgid(child)
+        if childGroup > 0 {
+            if Darwin.kill(-childGroup, SIGINT) == 0 {
+                delivered = true
+            } else if errno != ESRCH {
+                emitAsyncError("kill(-getpgid(child), SIGINT)", errno: errno)
+            }
+        } else if childGroup == -1 {
+            emitAsyncError("getpgid(child)", errno: errno)
+        }
+
+        if Darwin.kill(child, SIGINT) == 0 {
+            delivered = true
+        } else if errno != ESRCH {
             emitAsyncError("kill(child, SIGINT)", errno: errno)
-            throw makeSystemError("kill(SIGINT)")
+            if !delivered {
+                throw makeSystemError("kill(SIGINT)")
+            }
+        }
+
+        if !delivered {
+            throw PTYProcessError.systemCallFailed(function: "sendCtrlC", code: ESRCH)
         }
     }
 
@@ -332,7 +372,13 @@ public final class PTYProcess {
         }
     }
 
-    private func launchChildProcess(masterFD: Int32, slavePath: String, rows: Int, cols: Int) {
+    private func launchChildProcess(
+        masterFD: Int32,
+        slavePath: String,
+        rows: Int,
+        cols: Int,
+        shellConfigDirectoryPath: String
+    ) {
         _ = Darwin.close(masterFD)
 
         guard setsid() >= 0 else {
@@ -375,6 +421,18 @@ public final class PTYProcess {
         }
         emitChildDebug("[PTYProcess child] setpgid/getpgrp check succeeded\n")
 
+        var childProcessGroup = getpgrp()
+        if tcsetpgrp(slaveFD, childProcessGroup) == 0 {
+            emitChildDebug("[PTYProcess child] tcsetpgrp(slave) succeeded pgrp=\(childProcessGroup)\n")
+        } else {
+            let tcsetErrno = errno
+            if ioctl(slaveFD, TIOCSPGRP, &childProcessGroup) == 0 {
+                emitChildDebug("[PTYProcess child] ioctl(TIOCSPGRP, slave) succeeded pgrp=\(childProcessGroup)\n")
+            } else {
+                emitChildDebug("[PTYProcess child] foreground pgrp setup failed tcsetpgrp errno=\(tcsetErrno) ioctl errno=\(errno)\n")
+            }
+        }
+
         guard dup2(slaveFD, STDIN_FILENO) >= 0 else { childExitWithErrno("dup2(STDIN)") }
         guard dup2(slaveFD, STDOUT_FILENO) >= 0 else { childExitWithErrno("dup2(STDOUT)") }
         guard dup2(slaveFD, STDERR_FILENO) >= 0 else { childExitWithErrno("dup2(STDERR)") }
@@ -390,10 +448,12 @@ public final class PTYProcess {
             : URL(fileURLWithPath: shellPath).lastPathComponent
         var argv: [UnsafeMutablePointer<CChar>?] = [strdup(programName), strdup("-l"), nil]
 
-        var envStrings = environment.map { "\($0.key)=\($0.value)" }
-        if envStrings.first(where: { $0.hasPrefix("TERM=") }) == nil {
-            envStrings.append("TERM=xterm-256color")
-        }
+        var launchEnvironment = ProcessInfo.processInfo.environment
+        launchEnvironment["TERM"] = "xterm-256color"
+        launchEnvironment["ZDOTDIR"] = shellConfigDirectoryPath
+
+        let envStrings = launchEnvironment.map { "\($0.key)=\($0.value)" }
+        assert(envStrings.contains("TERM=xterm-256color"))
 
         var envp: [UnsafeMutablePointer<CChar>?] = envStrings.map { strdup($0) }
         envp.append(nil)
@@ -408,6 +468,17 @@ public final class PTYProcess {
 
         Darwin.perror("execve")
         childExitWithErrno("execve")
+    }
+
+    private func prepareShellConfigDirectory() throws -> String {
+        let directoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("glass-term-zdotdir-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let zshrcURL = directoryURL.appendingPathComponent(".zshrc", isDirectory: false)
+        let zshrcContents = "setopt PROMPT_SUBST\nexport PS1='<<<BLOCK_PROMPT>>>:%? '\nexport TERM=\"xterm-256color\"\n"
+        try zshrcContents.write(to: zshrcURL, atomically: true, encoding: .utf8)
+        return directoryURL.path
     }
 
     private static func normalizedEnvironment(_ env: [String: String]) -> [String: String] {
@@ -610,7 +681,6 @@ public final class PTYProcess {
             masterFD = -1
             childPID = -1
             didReceiveInitialOutput = false
-            slavePathForJobControl = nil
             shouldNotify = true
         }
         stateLock.unlock()
@@ -660,7 +730,6 @@ public final class PTYProcess {
         startupMonitor = nil
         startupMonitorRemainingChecks = 0
         didReceiveInitialOutput = false
-        slavePathForJobControl = nil
 
         return snapshot
     }
@@ -856,110 +925,4 @@ public final class PTYProcess {
         }
     }
 
-    private func configureForegroundProcessGroup(slavePath: String, childPID: pid_t) {
-        _ = waitForChildProcessGroupReadiness(childPID: childPID)
-
-        if setpgid(childPID, childPID) == 0 {
-            emitDebug("[PTYProcess] setpgid(parent) succeeded child pid=\(childPID)\n")
-        } else {
-            switch errno {
-            case EACCES:
-                emitDebug("[PTYProcess] setpgid(parent) EACCES; child already grouped\n")
-            case EPERM:
-                emitDebug("[PTYProcess] setpgid(parent) EPERM; child already grouped/session-adjusted\n")
-            default:
-                emitAsyncError("setpgid(parent child)", errno: errno)
-            }
-        }
-
-        let parentSlaveFD = Darwin.open(slavePath, O_RDWR)
-        guard parentSlaveFD >= 0 else {
-            emitAsyncError("open(parent slave for pgrp)", errno: errno)
-            return
-        }
-        defer { _ = Darwin.close(parentSlaveFD) }
-
-        var lastTCSetPgrpErrno: Int32?
-        var lastTIOCSPGRPErrno: Int32?
-
-        for attempt in 1...20 {
-            if tcsetpgrp(parentSlaveFD, childPID) == 0 {
-                emitDebug("[PTYProcess] tcsetpgrp(parent slave) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
-                return
-            }
-            let tcsetErrno = errno
-            lastTCSetPgrpErrno = tcsetErrno
-
-            var processGroup = childPID
-            if ioctl(parentSlaveFD, TIOCSPGRP, &processGroup) == 0 {
-                emitDebug("[PTYProcess] ioctl(TIOCSPGRP, parent slave) succeeded child pgrp=\(childPID) attempt=\(attempt)\n")
-                return
-            }
-            let ioctlErrno = errno
-            lastTIOCSPGRPErrno = ioctlErrno
-
-            if !isForegroundPgrpRetryable(tcsetErrno) && !isForegroundPgrpRetryable(ioctlErrno) {
-                break
-            }
-            usleep(5_000)
-        }
-
-        if let lastTCSetPgrpErrno {
-            emitAsyncError("tcsetpgrp(parent slave)", errno: lastTCSetPgrpErrno)
-        }
-        if let lastTIOCSPGRPErrno {
-            emitAsyncError("ioctl(TIOCSPGRP, parent slave)", errno: lastTIOCSPGRPErrno)
-        }
-        emitDebug("[PTYProcess] unable to set foreground pgrp on parent slave for child pid=\(childPID)\n")
-    }
-
-    private func isForegroundPgrpRetryable(_ code: Int32) -> Bool {
-        switch code {
-        case EINTR, EPERM, ENOTTY, EINVAL, ESRCH, EACCES:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func waitForChildProcessGroupReadiness(childPID: pid_t) -> Bool {
-        for _ in 0..<40 {
-            let groupID = getpgid(childPID)
-            if groupID == childPID {
-                emitDebug("[PTYProcess] child already has dedicated pgrp=\(groupID)\n")
-                return true
-            }
-            if groupID == -1 {
-                if errno == EINTR {
-                    continue
-                }
-                emitAsyncError("getpgid(child)", errno: errno)
-                return false
-            }
-            usleep(5_000)
-        }
-
-        emitDebug("[PTYProcess] child pgrp readiness timeout pid=\(childPID)\n")
-        return false
-    }
-
-    private func openJobControlSlaveFD() -> Int32? {
-        let slavePath: String? = {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            return slavePathForJobControl
-        }()
-
-        guard let slavePath else {
-            emitDebug("[PTYProcess] openJobControlSlaveFD skipped: no slave path\n")
-            return nil
-        }
-
-        let fd = Darwin.open(slavePath, O_RDWR)
-        if fd < 0 {
-            emitAsyncError("open(job-control slave)", errno: errno)
-            return nil
-        }
-        return fd
-    }
 }

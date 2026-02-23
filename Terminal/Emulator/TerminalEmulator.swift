@@ -80,7 +80,6 @@ public final class TerminalEmulator {
     private var screen: OpaquePointer?
     private var state: OpaquePointer?
 
-    private let scrollbackLimit = 10_000
     private let bracketedPasteEnableSequence: [UInt8] = [0x1B, 0x5B, 0x3F, 0x32, 0x30, 0x30, 0x34, 0x68] // ESC[?2004h
     private let bracketedPasteDisableSequence: [UInt8] = [0x1B, 0x5B, 0x3F, 0x32, 0x30, 0x30, 0x34, 0x6C] // ESC[?2004l
 
@@ -97,9 +96,21 @@ public final class TerminalEmulator {
     private var primaryBuffer: ScreenBuffer
     private var alternateBuffer: ScreenBuffer
     private var activeBufferKindStorage: ActiveBufferKind = .primary
+    private var onScrollbackLineStorage: ((ScreenLine) -> Void)?
+    private var onScrollbackClearedStorage: (() -> Void)?
 
     public var activeBufferKind: ActiveBufferKind {
         withQueue { activeBufferKindStorage }
+    }
+
+    public var onScrollbackLine: ((ScreenLine) -> Void)? {
+        get { withQueue { onScrollbackLineStorage } }
+        set { withQueue { onScrollbackLineStorage = newValue } }
+    }
+
+    public var onScrollbackCleared: (() -> Void)? {
+        get { withQueue { onScrollbackClearedStorage } }
+        set { withQueue { onScrollbackClearedStorage = newValue } }
     }
 
     public init(rows: Int, cols: Int) {
@@ -261,6 +272,8 @@ public final class TerminalEmulator {
     }
 
     fileprivate func handlePushScrollbackLine(cols: Int32, cells: UnsafePointer<VTermScreenCell>?) -> Int32 {
+        guard activeBufferKindStorage == .primary else { return 1 }
+        guard let callback = onScrollbackLineStorage else { return 1 }
         guard let cells else { return 1 }
 
         let count = max(0, Int(cols))
@@ -273,12 +286,12 @@ public final class TerminalEmulator {
             row.append(cell.width <= 0 ? .blank : cell)
         }
 
-        primaryBuffer.pushScrollbackRow(row, limit: scrollbackLimit)
+        callback(row)
         return 1
     }
 
     fileprivate func handleClearScrollback() -> Int32 {
-        primaryBuffer.clearScrollback()
+        onScrollbackClearedStorage?()
         return 1
     }
 

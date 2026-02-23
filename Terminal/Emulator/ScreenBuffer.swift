@@ -96,8 +96,6 @@ public struct ScreenBuffer: Sendable, Equatable {
     public private(set) var bellSequence: UInt64
     public private(set) var isBracketedPasteEnabled: Bool
     private var storage: [ScreenCell]
-    private var scrollbackStorage: [[ScreenCell]]
-    private var scrollbackStartIndex: Int
 
     public init(rows: Int, cols: Int, isAlternate: Bool) {
         precondition(rows > 0 && cols > 0, "ScreenBuffer size must be positive")
@@ -111,8 +109,6 @@ public struct ScreenBuffer: Sendable, Equatable {
         self.bellSequence = 0
         self.isBracketedPasteEnabled = false
         self.storage = Array(repeating: .blank, count: rows * cols)
-        self.scrollbackStorage = []
-        self.scrollbackStartIndex = 0
     }
 
     public subscript(row: Int, col: Int) -> ScreenCell {
@@ -136,24 +132,36 @@ public struct ScreenBuffer: Sendable, Equatable {
     }
 
     public var scrollbackRows: Int {
-        scrollbackStorage.count
+        0
     }
 
     public var totalRows: Int {
-        scrollbackRows + rows
+        rows
     }
 
     public func cellAtDisplayRow(_ displayRow: Int, col: Int) -> ScreenCell {
         guard col >= 0 && col < cols else { return .blank }
         guard displayRow >= 0 && displayRow < totalRows else { return .blank }
 
-        if displayRow < scrollbackRows {
-            let row = scrollbackRow(atDisplayIndex: displayRow)
-            guard col < row.count else { return .blank }
-            return row[col]
-        }
+        return self[displayRow, col]
+    }
 
-        return self[displayRow - scrollbackRows, col]
+    public func line(at row: Int) -> ScreenLine {
+        guard row >= 0 && row < rows else {
+            return Array(repeating: .blank, count: cols)
+        }
+        let start = row * cols
+        let end = start + cols
+        return Array(storage[start..<end])
+    }
+
+    public func visibleLines() -> [ScreenLine] {
+        var lines: [ScreenLine] = []
+        lines.reserveCapacity(rows)
+        for row in 0..<rows {
+            lines.append(line(at: row))
+        }
+        return lines
     }
 
     mutating func setCell(row: Int, col: Int, cell: ScreenCell) {
@@ -219,38 +227,12 @@ public struct ScreenBuffer: Sendable, Equatable {
         rows = newRows
         cols = newCols
         storage = newStorage
-        normalizeScrollbackWidths(targetCols: newCols)
         setCursor(row: cursor.row, col: cursor.col)
     }
 
     mutating func replaceVisibleStorage(_ newStorage: [ScreenCell]) {
         guard newStorage.count == storage.count else { return }
         storage = newStorage
-    }
-
-    mutating func pushScrollbackRow(_ row: [ScreenCell], limit: Int) {
-        guard limit > 0 else { return }
-        let normalized = normalizeRow(row, toCols: cols)
-        truncateScrollbackIfNeeded(limit: limit)
-
-        if scrollbackStorage.count < limit {
-            scrollbackStorage.append(normalized)
-            return
-        }
-
-        if scrollbackStorage.isEmpty {
-            scrollbackStorage.append(normalized)
-            scrollbackStartIndex = 0
-            return
-        }
-
-        scrollbackStorage[scrollbackStartIndex] = normalized
-        scrollbackStartIndex = (scrollbackStartIndex + 1) % scrollbackStorage.count
-    }
-
-    mutating func clearScrollback() {
-        scrollbackStorage.removeAll(keepingCapacity: true)
-        scrollbackStartIndex = 0
     }
 
     mutating func moveRect(
@@ -303,46 +285,5 @@ public struct ScreenBuffer: Sendable, Equatable {
 
     private func clamp(_ value: Int, lower: Int, upper: Int) -> Int {
         min(max(value, lower), upper)
-    }
-
-    private mutating func normalizeScrollbackWidths(targetCols: Int) {
-        for index in scrollbackStorage.indices {
-            scrollbackStorage[index] = normalizeRow(scrollbackStorage[index], toCols: targetCols)
-        }
-    }
-
-    private mutating func truncateScrollbackIfNeeded(limit: Int) {
-        guard scrollbackStorage.count > limit else { return }
-
-        let keepCount = min(limit, scrollbackRows)
-        if keepCount == 0 {
-            scrollbackStorage.removeAll(keepingCapacity: true)
-            scrollbackStartIndex = 0
-            return
-        }
-
-        let startDisplayIndex = scrollbackRows - keepCount
-        var normalized: [[ScreenCell]] = []
-        normalized.reserveCapacity(keepCount)
-        for displayIndex in startDisplayIndex..<scrollbackRows {
-            normalized.append(scrollbackRow(atDisplayIndex: displayIndex))
-        }
-        scrollbackStorage = normalized
-        scrollbackStartIndex = 0
-    }
-
-    private func scrollbackRow(atDisplayIndex displayIndex: Int) -> [ScreenCell] {
-        guard !scrollbackStorage.isEmpty else { return [] }
-        let mapped = (scrollbackStartIndex + displayIndex) % scrollbackStorage.count
-        return scrollbackStorage[mapped]
-    }
-
-    private func normalizeRow(_ row: [ScreenCell], toCols targetCols: Int) -> [ScreenCell] {
-        var normalized = Array(repeating: ScreenCell.blank, count: targetCols)
-        let copyCount = min(targetCols, row.count)
-        for col in 0..<copyCount {
-            normalized[col] = row[col]
-        }
-        return normalized
     }
 }
