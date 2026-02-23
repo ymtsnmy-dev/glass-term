@@ -70,14 +70,14 @@
 			path = ../Terminal/Screen;
 			sourceTree = "<group>";
 		};
-		42F3A0112F9BEA0000341206 /* ../Terminal/Session */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ../Terminal/Session;
-			sourceTree = "<group>";
-		};
 		42F100012F4AB00100341206 /* glass-termTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "glass-termTests";
+			sourceTree = "<group>";
+		};
+		42F3A0112F9BEA0000341206 /* ../Terminal/Session */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Terminal/Session;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
