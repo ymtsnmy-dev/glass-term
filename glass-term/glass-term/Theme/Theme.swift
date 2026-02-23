@@ -23,3 +23,9 @@ struct Theme: Identifiable {
     let blockSecondaryTextColor: Color
     let blockStderrTextColor: Color
 }
+
+extension Theme {
+    var isGlass: Bool {
+        backgroundStyle == .glass
+    }
+}

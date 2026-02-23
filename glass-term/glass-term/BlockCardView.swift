@@ -14,6 +14,40 @@ struct BlockCardView: View {
     var body: some View {
         let theme = themeManager.activeTheme
 
+        Group {
+            if theme.isGlass {
+                GlassPanel(
+                    cornerRadius: GlassTokens.BlockCard.cornerRadius,
+                    token: GlassTokens.BlockCard.panelStyle
+                ) {
+                    cardContent(theme: theme)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .glassSurface(.blockCard())
+            } else {
+                cardContent(theme: theme)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
+                            .fill(theme.blockCardBackground)
+                    )
+                    .overlay {
+                        if let border = theme.blockCardBorder {
+                            RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
+                                .stroke(border.color, lineWidth: border.lineWidth)
+                        }
+                    }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func cardContent(theme: Theme) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(block.status.statusSymbol)
@@ -21,15 +55,26 @@ struct BlockCardView: View {
                 Text(Self.timestampFormatter.string(from: block.startedAt))
                     .foregroundStyle(theme.blockSecondaryTextColor)
                 Spacer(minLength: 0)
-                Button("Copy") {
-                    onCopy()
-                }
+                copyButton(theme: theme)
             }
 
             Text("$ \(block.command)")
                 .foregroundStyle(theme.blockPrimaryTextColor)
 
-            Divider()
+            if theme.isGlass {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [GlassTokens.BlockCard.separator, Color.clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 1)
+                    .padding(.top, 2)
+            } else {
+                Divider()
+            }
 
             if !block.stdout.isEmpty {
                 Text(verbatim: block.stdout)
@@ -47,20 +92,16 @@ struct BlockCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .font(.system(.body, design: .monospaced))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
-                .fill(theme.blockCardBackground)
-        )
-        .overlay {
-            if let border = theme.blockCardBorder {
-                RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
-                    .stroke(border.color, lineWidth: border.lineWidth)
-            }
+    }
+
+    @ViewBuilder
+    private func copyButton(theme: Theme) -> some View {
+        Button("Copy") {
+            onCopy()
         }
-        .padding(.horizontal)
+        .if(theme.isGlass) { view in
+            view.buttonStyle(GlassButtonStyle())
+        }
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -69,6 +110,17 @@ struct BlockCardView: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+private extension View {
+    @ViewBuilder
+    func `if`<Transformed: View>(_ condition: Bool, transform: (Self) -> Transformed) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
 }
 
 private extension BlockStatus {

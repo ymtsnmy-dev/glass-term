@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CopyStackDrawer: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject var manager: CopyQueueManager
     let onClose: () -> Void
 
@@ -10,10 +11,28 @@ struct CopyStackDrawer: View {
     }
 
     var body: some View {
+        let isGlass = themeManager.activeTheme.isGlass
+
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            Divider()
+            if isGlass {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                GlassTokens.Accent.primary.opacity(0.04),
+                                Color.clear,
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 1)
+            } else {
+                Divider()
+            }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -25,15 +44,37 @@ struct CopyStackDrawer: View {
             }
         }
         .padding(14)
-        .frame(width: 360)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(.white.opacity(0.08))
-                .frame(width: 1)
+        .background {
+            if isGlass {
+                Color.clear
+            } else {
+                Color.clear.background(.ultraThinMaterial)
+            }
         }
-        .shadow(color: .black.opacity(0.22), radius: 16, x: -6, y: 0)
+        .if(isGlass) { view in
+            view
+                .glassSurface(.copyDrawerShell())
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.10),
+                                    GlassTokens.Accent.primary.opacity(0.05),
+                                    Color.clear,
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: 18)
+                        .allowsHitTesting(false)
+                }
+        }
+        .if(!isGlass) { view in
+            view.shadow(color: .black.opacity(0.22), radius: 16, x: -6, y: 0)
+        }
         .transition(.move(edge: .trailing).combined(with: .opacity))
     }
 
@@ -68,6 +109,11 @@ struct CopyStackDrawer: View {
             }
             .buttonStyle(.bordered)
         }
+        .if(themeManager.activeTheme.isGlass) { view in
+            view
+                .padding(10)
+                .glassSurface(.copyDrawerHeader())
+        }
     }
 
     private func itemCard(_ item: CopiedBlock, index: Int) -> some View {
@@ -96,11 +142,27 @@ struct CopyStackDrawer: View {
                 .lineLimit(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                .background {
+                    if !themeManager.activeTheme.isGlass {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                    }
+                }
+                .if(themeManager.activeTheme.isGlass) { view in
+                    view.glassSurface(.copyDrawerTextPanel())
+                }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+        .background {
+            if !themeManager.activeTheme.isGlass {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            }
+        }
+        .if(themeManager.activeTheme.isGlass) { view in
+            view.glassSurface(.copyDrawerCard())
+        }
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -109,4 +171,15 @@ struct CopyStackDrawer: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+private extension View {
+    @ViewBuilder
+    func `if`<Transformed: View>(_ condition: Bool, transform: (Self) -> Transformed) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
 }

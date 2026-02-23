@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject private var copyQueueManager: CopyQueueManager
     @State private var hostWindow: NSWindow?
     @State private var isCopyDrawerPresented = false
+    @State private var blockListScrollTrigger: UInt64 = 0
 
     init(sessionID: UUID, session: TerminalSessionController) {
         self.sessionID = sessionID
@@ -20,26 +21,43 @@ struct ContentView: View {
             contentBackground
 
             if session.displayMode == .rawMode {
-                TerminalView(session: session)
+                rawModeContent
             } else {
-                VStack(spacing: 0) {
-                    BlockListView(session: session) { block in
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.92)) {
-                            session.copyQueueManager.append(block: block)
-                            isCopyDrawerPresented = true
+                GeometryReader { geometry in
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            BlockListView(
+                                session: session,
+                                scrollToBottomTrigger: blockListScrollTrigger
+                            ) { block in
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.92)) {
+                                    session.copyQueueManager.append(block: block)
+                                    isCopyDrawerPresented = true
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .layoutPriority(1)
+
+                            if isCopyDrawerVisible {
+                                CopyStackDrawer(manager: copyQueueManager) {
+                                    closeCopyDrawer()
+                                }
+                                .frame(width: copyDrawerWidth(containerWidth: geometry.size.width))
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                            }
                         }
-                    }
 
-                    Divider()
+                        Divider()
 
-                    InputBarView { command in
-                        session.sendInput(command + "\n")
+                        InputBarView(
+                            onFocusCommandField: requestBlockListScrollToBottom
+                        ) { command in
+                            requestBlockListScrollToBottom()
+                            session.sendInput(command + "\n")
+                        }
                     }
                 }
             }
-        }
-        .overlay(alignment: .trailing) {
-            copyStackOverlay
         }
         .background(
             WindowReader { window in
@@ -70,6 +88,28 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var rawModeContent: some View {
+        if themeManager.activeTheme.isGlass {
+            GlassPanel(
+                cornerRadius: GlassTokens.RawTerminal.cornerRadius,
+                token: GlassTokens.RawTerminal.containerPanel
+            ) {
+                TerminalView(
+                    session: session,
+                    textColor: GlassTokens.RawTerminal.terminalText,
+                    backgroundColor: GlassTokens.RawTerminal.terminalBackground,
+                    cursorColor: GlassTokens.RawTerminal.terminalCursor
+                )
+                .clipShape(RoundedRectangle(cornerRadius: GlassTokens.RawTerminal.cornerRadius, style: .continuous))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+        } else {
+            TerminalView(session: session)
+        }
+    }
+
+    @ViewBuilder
     private var contentBackground: some View {
         switch themeManager.activeTheme.backgroundStyle {
         case .solid:
@@ -81,21 +121,12 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var copyStackOverlay: some View {
-        ZStack(alignment: .trailing) {
-            Color.clear
-                .allowsHitTesting(false)
+    private var isCopyDrawerVisible: Bool {
+        isCopyDrawerPresented && !copyQueueManager.items.isEmpty
+    }
 
-            if isCopyDrawerPresented && !copyQueueManager.items.isEmpty {
-                CopyStackDrawer(manager: copyQueueManager) {
-                    closeCopyDrawer()
-                }
-                    .padding(.vertical, 12)
-                    .padding(.trailing, 12)
-                    .allowsHitTesting(true)
-            }
-        }
+    private func copyDrawerWidth(containerWidth: CGFloat) -> CGFloat {
+        min(380, max(280, containerWidth * 0.28))
     }
 
     private func closeCopyDrawer() {
@@ -111,6 +142,11 @@ struct ContentView: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.92)) {
             isCopyDrawerPresented.toggle()
         }
+    }
+
+    private func requestBlockListScrollToBottom() {
+        guard session.displayMode == .blockMode else { return }
+        blockListScrollTrigger &+= 1
     }
 }
 

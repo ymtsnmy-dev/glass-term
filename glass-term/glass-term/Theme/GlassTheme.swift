@@ -6,11 +6,14 @@ enum GlassTheme {
         name: "Glass",
         backgroundStyle: .glass,
         terminalBackgroundColor: .black,
-        blockCardBackground: Color.white.opacity(0.10),
-        blockCardCornerRadius: 18,
-        blockCardBorder: ThemeBorderStyle(color: Color.white.opacity(0.16), lineWidth: 1),
-        blockPrimaryTextColor: .white,
-        blockSecondaryTextColor: Color.white.opacity(0.78),
-        blockStderrTextColor: Color.red.opacity(0.92)
+        blockCardBackground: GlassTokens.BlockCard.panelStyle.fill,
+        blockCardCornerRadius: GlassTokens.BlockCard.cornerRadius,
+        blockCardBorder: ThemeBorderStyle(
+            color: GlassTokens.BlockCard.panelStyle.stroke.color,
+            lineWidth: GlassTokens.BlockCard.panelStyle.stroke.width
+        ),
+        blockPrimaryTextColor: GlassTokens.Text.blockPrimary,
+        blockSecondaryTextColor: GlassTokens.Text.blockSecondary,
+        blockStderrTextColor: GlassTokens.Text.blockStderr
     )
 }
