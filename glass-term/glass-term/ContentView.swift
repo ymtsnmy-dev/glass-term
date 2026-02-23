@@ -2,20 +2,22 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
+    private let sessionID: UUID
+    @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject var session: TerminalSessionController
     @ObservedObject private var copyQueueManager: CopyQueueManager
     @State private var hostWindow: NSWindow?
     @State private var isCopyDrawerPresented = false
 
-    init(session: TerminalSessionController) {
+    init(sessionID: UUID, session: TerminalSessionController) {
+        self.sessionID = sessionID
         self.session = session
         _copyQueueManager = ObservedObject(wrappedValue: session.copyQueueManager)
     }
 
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            contentBackground
 
             if session.displayMode == .rawMode {
                 TerminalView(session: session)
@@ -53,7 +55,11 @@ struct ContentView: View {
         .onChange(of: session.bellSequence) { _, _ in
             NSSound.beep()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleCopyStackDrawer)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .toggleCopyStackDrawer)) { notification in
+            guard let incomingSessionID = notification.userInfo?["sessionID"] as? UUID else {
+                return
+            }
+            guard incomingSessionID == sessionID else { return }
             toggleCopyDrawer()
         }
         .onChange(of: copyQueueManager.items.isEmpty) { _, isEmpty in
@@ -61,6 +67,18 @@ struct ContentView: View {
             closeCopyDrawer()
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.92), value: copyQueueManager.items.count)
+    }
+
+    @ViewBuilder
+    private var contentBackground: some View {
+        switch themeManager.activeTheme.backgroundStyle {
+        case .solid:
+            themeManager.activeTheme.terminalBackgroundColor
+                .ignoresSafeArea()
+        case .glass:
+            Color.clear
+                .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
