@@ -19,6 +19,7 @@ public final class TerminalSessionController: ObservableObject {
     public let process: PTYProcess
     public let emulator: TerminalEmulator
     public let blockBoundaryManager: BlockBoundaryManager
+    let copyQueueManager = CopyQueueManager()
 
     public var blocks: [Block] {
         blockBoundaryManager.blocks
