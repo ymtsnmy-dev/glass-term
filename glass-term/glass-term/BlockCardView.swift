@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 struct BlockCardView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     let block: Block
     let onCopy: () -> Void
 
@@ -11,11 +12,14 @@ struct BlockCardView: View {
     }
 
     var body: some View {
+        let theme = themeManager.activeTheme
+
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(block.status.statusSymbol)
+                    .foregroundStyle(theme.blockPrimaryTextColor)
                 Text(Self.timestampFormatter.string(from: block.startedAt))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.blockSecondaryTextColor)
                 Spacer(minLength: 0)
                 Button("Copy") {
                     onCopy()
@@ -23,11 +27,13 @@ struct BlockCardView: View {
             }
 
             Text("$ \(block.command)")
+                .foregroundStyle(theme.blockPrimaryTextColor)
 
             Divider()
 
             if !block.stdout.isEmpty {
                 Text(verbatim: block.stdout)
+                    .foregroundStyle(theme.blockPrimaryTextColor)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -35,7 +41,7 @@ struct BlockCardView: View {
 
             if !block.stderr.isEmpty {
                 Text(verbatim: block.stderr)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(theme.blockStderrTextColor)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,8 +50,16 @@ struct BlockCardView: View {
         .font(.system(.body, design: .monospaced))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.ultraThinMaterial)
-        .cornerRadius(12)
+        .background(
+            RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
+                .fill(theme.blockCardBackground)
+        )
+        .overlay {
+            if let border = theme.blockCardBorder {
+                RoundedRectangle(cornerRadius: theme.blockCardCornerRadius, style: .continuous)
+                    .stroke(border.color, lineWidth: border.lineWidth)
+            }
+        }
         .padding(.horizontal)
     }
 
