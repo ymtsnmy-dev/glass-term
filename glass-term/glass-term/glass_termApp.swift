@@ -8,5 +8,14 @@ struct glass_termApp: App {
         WindowGroup {
             ContentView(session: session)
         }
+        .commands {
+            CommandMenu("Copy Stack") {
+                Button("Toggle Copy Stack") {
+                    NotificationCenter.default.post(name: .toggleCopyStackDrawer, object: nil)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(session.displayMode == .rawMode)
+            }
+        }
     }
 }

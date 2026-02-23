@@ -17,7 +17,9 @@ struct BlockCardView: View {
                 Text(Self.timestampFormatter.string(from: block.startedAt))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                Button("Copy", action: onCopy)
+                Button("Copy") {
+                    onCopy()
+                }
             }
 
             Text("$ \(block.command)")
