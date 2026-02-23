@@ -122,15 +122,15 @@ private struct TabPillView: View {
                     SessionStatusDot(state: item.state, isGlass: isGlass)
 
                     HStack(spacing: 6) {
-                        Text(item.title)
+                        Text(primaryLabel)
                             .lineLimit(1)
                             .font(.system(size: 12, weight: item.isActive ? .semibold : .medium))
                             .foregroundStyle(primaryTextColor)
 
-                        if let subtitle = item.subtitle, !subtitle.isEmpty {
+                        if let subtitle = secondaryLabel, !subtitle.isEmpty {
                             Text(subtitle)
                                 .lineLimit(1)
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 11, weight: .regular))
                                 .foregroundStyle(secondaryTextColor)
                         }
                     }
@@ -203,13 +203,19 @@ private struct TabPillView: View {
 
     private var primaryTextColor: Color {
         if isGlass {
+            if prefersShellAsSecondary {
+                return item.isActive
+                    ? Color(.sRGB, red: 0.89, green: 0.98, blue: 1.00, opacity: 0.96)
+                    : Color(.sRGB, red: 0.79, green: 0.93, blue: 1.00, opacity: 0.86)
+            }
+
             switch item.state {
             case .exited:
-                return Color(.sRGB, red: 0.95, green: 0.92, blue: 0.98, opacity: item.isActive ? 0.98 : 0.88)
+                return Color(.sRGB, red: 0.95, green: 0.92, blue: 0.98, opacity: item.isActive ? 0.96 : 0.86)
             case .running, .idle:
                 return item.isActive
-                    ? Color(.sRGB, red: 0.86, green: 0.97, blue: 1.00, opacity: 0.98)
-                    : Color(.sRGB, red: 0.72, green: 0.88, blue: 0.96, opacity: 0.88)
+                    ? Color(.sRGB, red: 0.86, green: 0.97, blue: 1.00, opacity: 0.96)
+                    : Color(.sRGB, red: 0.74, green: 0.90, blue: 0.98, opacity: 0.86)
             }
         }
         return item.isActive ? .white : Color.white.opacity(0.85)
@@ -217,9 +223,14 @@ private struct TabPillView: View {
 
     private var secondaryTextColor: Color {
         if isGlass {
+            if prefersShellAsSecondary {
+                return item.isActive
+                    ? Color(.sRGB, red: 0.80, green: 0.90, blue: 0.98, opacity: 0.62)
+                    : Color(.sRGB, red: 0.74, green: 0.85, blue: 0.94, opacity: 0.54)
+            }
             return item.isActive
-                ? Color(.sRGB, red: 0.52, green: 0.90, blue: 1.0, opacity: 0.88)
-                : Color(.sRGB, red: 0.62, green: 0.80, blue: 0.92, opacity: 0.66)
+                ? Color(.sRGB, red: 0.62, green: 0.92, blue: 1.0, opacity: 0.84)
+                : Color(.sRGB, red: 0.70, green: 0.86, blue: 0.96, opacity: 0.66)
         }
         return Color.white.opacity(0.65)
     }
@@ -227,8 +238,8 @@ private struct TabPillView: View {
     private var closeIconColor: Color {
         if isGlass {
             return item.isActive
-                ? Color(.sRGB, red: 0.80, green: 0.95, blue: 1.00, opacity: 0.88)
-                : Color(.sRGB, red: 0.74, green: 0.88, blue: 0.98, opacity: 0.80)
+                ? Color(.sRGB, red: 0.84, green: 0.96, blue: 1.00, opacity: 0.92)
+                : Color(.sRGB, red: 0.78, green: 0.90, blue: 0.98, opacity: 0.86)
         }
         return Color.white.opacity(0.8)
     }
@@ -242,6 +253,26 @@ private struct TabPillView: View {
             return Color.white.opacity(0.08)
         }
         return .clear
+    }
+
+    private var prefersShellAsSecondary: Bool {
+        guard let subtitle = item.subtitle, !subtitle.isEmpty else { return false }
+        let normalized = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["zsh", "bash", "sh", "fish", "pwsh", "powershell"].contains(normalized)
+    }
+
+    private var primaryLabel: String {
+        if prefersShellAsSecondary, let subtitle = item.subtitle, !subtitle.isEmpty {
+            return subtitle
+        }
+        return item.title
+    }
+
+    private var secondaryLabel: String? {
+        if prefersShellAsSecondary {
+            return item.title
+        }
+        return item.subtitle
     }
 }
 
@@ -268,14 +299,21 @@ private struct SessionStatusDot: View {
                 Circle()
                     .stroke(Color.white.opacity(isGlass ? 0.10 : 0.18), lineWidth: 0.5)
             }
-            .shadow(color: dotColor.opacity(isGlass ? 0.55 : 0), radius: isGlass ? 5 : 0, x: 0, y: 0)
+            .overlay {
+                if isGlass {
+                    Circle()
+                        .stroke(dotColor.opacity(0.20), lineWidth: 0.8)
+                        .blur(radius: 2)
+                }
+            }
+            .shadow(color: dotColor.opacity(isGlass ? 0.26 : 0), radius: isGlass ? 5 : 0, x: 0, y: 0)
     }
 
     private var dotColor: Color {
         switch state {
         case .running:
             return isGlass
-                ? GlassTokens.Accent.success.opacity(0.98)
+                ? GlassTokens.Accent.primary.opacity(0.98)
                 : Color.green.opacity(0.95)
         case .idle:
             return isGlass
@@ -303,15 +341,15 @@ private struct NewTabOrbButton: View {
         }) {
             ZStack {
                 Circle()
-                    .fill(isGlass ? Color(.sRGB, red: 0.95, green: 0.99, blue: 1.0, opacity: 0.08) : Color.white.opacity(0.10))
+                    .fill(isGlass ? Color(.sRGB, red: 0.97, green: 0.995, blue: 1.0, opacity: 0.12) : Color.white.opacity(0.10))
                     .background {
                         if isGlass {
                             Circle()
                                 .fill(
                                     LinearGradient(
                                         colors: [
-                                            Color(.sRGB, red: 1.0, green: 1.0, blue: 1.0, opacity: 0.10),
-                                            Color(.sRGB, red: 0.40, green: 0.86, blue: 1.0, opacity: 0.06),
+                                            Color(.sRGB, red: 1.0, green: 1.0, blue: 1.0, opacity: 0.16),
+                                            Color(.sRGB, red: 0.40, green: 0.86, blue: 1.0, opacity: 0.10),
                                         ],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
@@ -321,11 +359,11 @@ private struct NewTabOrbButton: View {
                     }
                     .overlay {
                         Circle()
-                            .stroke(isGlass ? Color.white.opacity(0.11) : Color.white.opacity(0.18), lineWidth: 1)
+                            .stroke(isGlass ? Color.white.opacity(0.16) : Color.white.opacity(0.18), lineWidth: 1)
                     }
                     .overlay(alignment: .top) {
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(isGlass ? 0.24 : 0.18))
+                            .fill(Color.white.opacity(isGlass ? 0.30 : 0.18))
                             .frame(width: 9, height: 1)
                             .padding(.top, 3)
                     }
@@ -333,13 +371,13 @@ private struct NewTabOrbButton: View {
 
                 Image(systemName: "plus")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(isGlass ? Color(.sRGB, red: 0.85, green: 0.97, blue: 1.0, opacity: 0.95) : Color.white)
+                    .foregroundStyle(isGlass ? Color(.sRGB, red: 0.92, green: 0.99, blue: 1.0, opacity: 0.98) : Color.white)
             }
             .frame(width: 30, height: 30)
         }
         .buttonStyle(NewTabOrbPressStyle())
         .scaleEffect(isHovered ? 1.03 : 1.0)
-        .shadow(color: isGlass ? Color(.sRGB, red: 0.36, green: 0.86, blue: 1.0, opacity: isHovered ? 0.18 : 0.08) : .clear, radius: isHovered ? 8 : 4, x: 0, y: 2)
+        .shadow(color: isGlass ? Color(.sRGB, red: 0.36, green: 0.86, blue: 1.0, opacity: isHovered ? 0.22 : 0.10) : .clear, radius: isHovered ? 9 : 5, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering

@@ -23,26 +23,33 @@ struct BlockListView: View {
             if session.blocks.isEmpty {
                 VStack {
                     Spacer(minLength: 0)
-                    Text("Ready")
-                        .font(.system(.body, design: .monospaced))
+                    Label("Ready", systemImage: "terminal")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 20, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Ready")
+                        .help("Ready")
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(session.blocks, id: \.id) { block in
-                                BlockCardView(block: block) {
-                                    onCopyBlock(block)
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            ForEach(Array(session.blocks.enumerated()), id: \.element.id) { entry in
+                                BlockCardView(
+                                    block: entry.element,
+                                    isLatest: entry.offset == session.blocks.count - 1
+                                ) {
+                                    onCopyBlock(entry.element)
                                 }
                             }
                             Color.clear
                                 .frame(height: 1)
                                 .id(bottomAnchorID)
                         }
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 14)
                     }
                     .onAppear {
                         scrollToBottom(proxy: proxy, animated: false)

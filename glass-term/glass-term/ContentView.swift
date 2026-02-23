@@ -50,6 +50,8 @@ struct ContentView: View {
                         Divider()
 
                         InputBarView(
+                            workingDirectoryDisplay: session.currentDirectoryDisplayName,
+                            completionBaseDirectoryPath: session.currentDirectoryPath,
                             onFocusCommandField: requestBlockListScrollToBottom
                         ) { command in
                             requestBlockListScrollToBottom()
