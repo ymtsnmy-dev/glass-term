@@ -15,11 +15,14 @@ public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var windowTitle: String = "glass-term"
     @Published public private(set) var bellSequence: UInt64 = 0
     @Published public private(set) var displayMode: DisplayMode = .blockMode
+    @Published public private(set) var isProcessTerminated = false
+    @Published public private(set) var processExitCode: Int32?
 
     public let process: PTYProcess
     public let emulator: TerminalEmulator
     public let blockBoundaryManager: BlockBoundaryManager
     let copyQueueManager = CopyQueueManager()
+    public var onProcessTermination: ((Int32?) -> Void)?
 
     public var blocks: [Block] {
         blockBoundaryManager.blocks
@@ -41,6 +44,7 @@ public final class TerminalSessionController: ObservableObject {
     private var pendingCommandLine = ""
     private var inputEscapeState: InputEscapeState = .none
     private var isAlternateScreenActive = false
+    private var hasTerminatedBridge = false
     public init(
         initialRows: Int = 24,
         initialCols: Int = 80,
@@ -90,8 +94,8 @@ public final class TerminalSessionController: ObservableObject {
         bridge.onScreenBufferUpdated = { [weak self] updatedBuffer in
             self?.applyUpdatedBuffer(updatedBuffer)
         }
-        bridge.onProcessExit = { [weak self] _ in
-            self?.renderVersion &+= 1
+        bridge.onProcessExit = { [weak self] code in
+            self?.handleProcessExit(code)
         }
 
         startIfNeeded()
@@ -111,6 +115,12 @@ public final class TerminalSessionController: ObservableObject {
 
     public func snapshot() -> ScreenBuffer {
         latestBuffer
+    }
+
+    public func terminate() {
+        guard !hasTerminatedBridge else { return }
+        hasTerminatedBridge = true
+        bridge.terminate()
     }
 
     public func combinedBuffer() -> [ScreenLine] {
@@ -357,6 +367,13 @@ public final class TerminalSessionController: ObservableObject {
             pendingCommandLine.removeAll(keepingCapacity: true)
             inputEscapeState = .none
         }
+    }
+
+    private func handleProcessExit(_ code: Int32?) {
+        isProcessTerminated = true
+        processExitCode = code
+        renderVersion &+= 1
+        onProcessTermination?(code)
     }
 
     private func recordInputForBlockBoundary(_ text: String) {

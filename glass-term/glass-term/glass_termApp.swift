@@ -2,11 +2,11 @@ import SwiftUI
 
 @main
 struct glass_termApp: App {
-    @StateObject private var session = TerminalSessionController()
+    @StateObject private var sessionManager = SessionManager()
 
     var body: some Scene {
         WindowGroup {
-            ContentView(session: session)
+            TabbedTerminalRootView(sessionManager: sessionManager)
         }
         .commands {
             CommandMenu("Copy Stack") {
@@ -14,7 +14,7 @@ struct glass_termApp: App {
                     NotificationCenter.default.post(name: .toggleCopyStackDrawer, object: nil)
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
-                .disabled(session.displayMode == .rawMode)
+                .disabled(sessionManager.activeDisplayMode == .rawMode)
             }
         }
     }
