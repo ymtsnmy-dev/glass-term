@@ -37,9 +37,9 @@ struct GlassPanelBackground: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.035),
-                            Color.white.opacity(0.010),
-                            Color.black.opacity(0.020),
+                            Color.white.opacity(0.070),
+                            Color.white.opacity(0.022),
+                            Color.black.opacity(0.008),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -79,8 +79,8 @@ struct GlassPanelBackground: View {
                 .overlay(alignment: .top) {
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.14),
-                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.20),
+                            Color.white.opacity(0.09),
                             Color.clear,
                         ],
                         startPoint: .leading,
@@ -99,8 +99,8 @@ struct GlassPanelBackground: View {
                     LinearGradient(
                         colors: [
                             Color.clear,
-                            Color.white.opacity(0.04),
-                            Color(.sRGB, red: 0.45, green: 0.90, blue: 1.0, opacity: 0.06),
+                            Color.white.opacity(0.06),
+                            Color(.sRGB, red: 0.55, green: 0.94, blue: 1.0, opacity: 0.09),
                             Color.clear,
                         ],
                         startPoint: .leading,

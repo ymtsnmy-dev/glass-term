@@ -26,13 +26,13 @@ extension GlassSurfaceSpec {
     static func tabStrip() -> Self {
         .init(
             cornerRadius: 16,
-            tint: Color(.sRGB, red: 0.055, green: 0.075, blue: 0.105, opacity: 0.18),
-            materialOpacity: 0.92,
-            outerStrokeColor: Color.white.opacity(0.09),
-            innerStrokeColor: Color.white.opacity(0.05),
+            tint: Color(.sRGB, red: 0.84, green: 0.92, blue: 1.00, opacity: 0.030),
+            materialOpacity: 0.97,
+            outerStrokeColor: Color.white.opacity(0.14),
+            innerStrokeColor: Color.white.opacity(0.09),
             topEdgeColors: [
-                Color.white.opacity(0.14),
-                GlassTokens.Accent.primary.opacity(0.08),
+                Color.white.opacity(0.17),
+                GlassTokens.Accent.primary.opacity(0.11),
                 GlassTokens.Accent.secondary.opacity(0.04),
                 Color.clear,
             ],
@@ -43,30 +43,30 @@ extension GlassSurfaceSpec {
                 Color.clear,
             ],
             rimGlowColor: GlassTokens.Accent.secondary,
-            rimGlowOpacity: 0.05,
-            rimGlowRadius: 10,
-            noiseOpacity: 0.02,
-            nearShadowColor: Color.black.opacity(0.20),
-            nearShadowRadius: 8,
+            rimGlowOpacity: 0.07,
+            rimGlowRadius: 11,
+            noiseOpacity: 0.015,
+            nearShadowColor: Color.black.opacity(0.09),
+            nearShadowRadius: 6,
             nearShadowX: 0,
-            nearShadowY: 3,
-            farShadowColor: Color.black.opacity(0.14),
-            farShadowRadius: 18,
+            nearShadowY: 2,
+            farShadowColor: Color.black.opacity(0.05),
+            farShadowRadius: 12,
             farShadowX: 0,
-            farShadowY: 8
+            farShadowY: 5
         )
     }
 
     static func tabPill(isActive: Bool, isHovered: Bool) -> Self {
         .init(
             cornerRadius: 15,
-            tint: Color(.sRGB, red: 0.92, green: 0.97, blue: 1.00, opacity: isActive ? 0.090 : (isHovered ? 0.055 : 0.040)),
-            materialOpacity: isActive ? 0.90 : 0.78,
-            outerStrokeColor: Color.white.opacity(isActive ? 0.10 : (isHovered ? 0.08 : 0.06)),
-            innerStrokeColor: Color.white.opacity(isActive ? 0.06 : 0.04),
+            tint: Color(.sRGB, red: 0.95, green: 0.99, blue: 1.00, opacity: isActive ? 0.095 : (isHovered ? 0.065 : 0.045)),
+            materialOpacity: isActive ? 0.95 : 0.88,
+            outerStrokeColor: Color.white.opacity(isActive ? 0.15 : (isHovered ? 0.12 : 0.10)),
+            innerStrokeColor: Color.white.opacity(isActive ? 0.10 : 0.07),
             topEdgeColors: [
-                Color.white.opacity(isActive ? 0.20 : (isHovered ? 0.14 : 0.08)),
-                GlassTokens.Accent.primary.opacity(isActive ? 0.11 : 0.05),
+                Color.white.opacity(isActive ? 0.23 : (isHovered ? 0.17 : 0.11)),
+                GlassTokens.Accent.primary.opacity(isActive ? 0.14 : 0.07),
                 GlassTokens.Accent.secondary.opacity(isActive ? 0.05 : 0.02),
                 Color.clear,
             ],
@@ -77,30 +77,30 @@ extension GlassSurfaceSpec {
                 Color.clear,
             ],
             rimGlowColor: isActive ? GlassTokens.Accent.primary : nil,
-            rimGlowOpacity: isActive ? 0.10 : 0.0,
-            rimGlowRadius: isActive ? 9 : 0,
+            rimGlowOpacity: isActive ? 0.13 : 0.0,
+            rimGlowRadius: isActive ? 10 : 0,
             noiseOpacity: 0.0,
-            nearShadowColor: Color.black.opacity(isActive ? 0.15 : 0.10),
-            nearShadowRadius: isActive ? 7 : 4,
+            nearShadowColor: Color.black.opacity(isActive ? 0.08 : 0.05),
+            nearShadowRadius: isActive ? 5 : 3,
             nearShadowX: 0,
-            nearShadowY: 3,
-            farShadowColor: (isActive ? GlassTokens.Accent.primary : Color.black).opacity(isActive ? 0.10 : 0.0),
-            farShadowRadius: isActive ? 10 : 0,
+            nearShadowY: 2,
+            farShadowColor: (isActive ? GlassTokens.Accent.primary : Color.black).opacity(isActive ? 0.12 : 0.0),
+            farShadowRadius: isActive ? 9 : 0,
             farShadowX: 0,
             farShadowY: 2
         )
     }
 
-    static func blockCard() -> Self {
+    static func blockCard(isLatest: Bool = false) -> Self {
         .init(
             cornerRadius: GlassTokens.BlockCard.cornerRadius,
-            tint: Color(.sRGB, red: 0.92, green: 0.97, blue: 1.00, opacity: 0.038),
-            materialOpacity: 0.88,
-            outerStrokeColor: Color.white.opacity(0.085),
-            innerStrokeColor: Color.white.opacity(0.045),
+            tint: Color(.sRGB, red: 0.95, green: 0.99, blue: 1.00, opacity: 0.040),
+            materialOpacity: 0.95,
+            outerStrokeColor: Color.white.opacity(isLatest ? 0.15 : 0.13),
+            innerStrokeColor: Color.white.opacity(0.09),
             topEdgeColors: [
-                Color.white.opacity(0.12),
-                GlassTokens.Accent.primary.opacity(0.07),
+                Color.white.opacity(isLatest ? 0.17 : 0.15),
+                GlassTokens.Accent.primary.opacity(isLatest ? 0.115 : 0.10),
                 GlassTokens.Accent.secondary.opacity(0.03),
                 Color.clear,
             ],
@@ -113,28 +113,28 @@ extension GlassSurfaceSpec {
             rimGlowColor: nil,
             rimGlowOpacity: 0,
             rimGlowRadius: 0,
-            noiseOpacity: 0.018,
-            nearShadowColor: Color.black.opacity(0.14),
-            nearShadowRadius: 6,
+            noiseOpacity: 0.015,
+            nearShadowColor: Color.black.opacity(0.07),
+            nearShadowRadius: 4,
             nearShadowX: 0,
-            nearShadowY: 3,
-            farShadowColor: Color.black.opacity(0.10),
-            farShadowRadius: 16,
+            nearShadowY: 2,
+            farShadowColor: Color.black.opacity(0.035),
+            farShadowRadius: 10,
             farShadowX: 0,
-            farShadowY: 8
+            farShadowY: 4
         )
     }
 
     static func copyDrawerShell() -> Self {
         .init(
             cornerRadius: 18,
-            tint: Color(.sRGB, red: 0.06, green: 0.08, blue: 0.11, opacity: 0.22),
-            materialOpacity: 0.95,
-            outerStrokeColor: Color.white.opacity(0.09),
-            innerStrokeColor: Color.white.opacity(0.05),
+            tint: Color(.sRGB, red: 0.91, green: 0.965, blue: 1.00, opacity: 0.030),
+            materialOpacity: 0.965,
+            outerStrokeColor: Color.white.opacity(0.115),
+            innerStrokeColor: Color.white.opacity(0.075),
             topEdgeColors: [
-                Color.white.opacity(0.12),
-                GlassTokens.Accent.primary.opacity(0.07),
+                Color.white.opacity(0.16),
+                GlassTokens.Accent.primary.opacity(0.11),
                 GlassTokens.Accent.secondary.opacity(0.05),
                 Color.clear,
             ],
@@ -145,15 +145,15 @@ extension GlassSurfaceSpec {
                 Color.clear,
             ],
             rimGlowColor: GlassTokens.Accent.secondary,
-            rimGlowOpacity: 0.05,
-            rimGlowRadius: 10,
-            noiseOpacity: 0.025,
-            nearShadowColor: Color.black.opacity(0.18),
-            nearShadowRadius: 12,
+            rimGlowOpacity: 0.07,
+            rimGlowRadius: 12,
+            noiseOpacity: 0.018,
+            nearShadowColor: Color.black.opacity(0.08),
+            nearShadowRadius: 8,
             nearShadowX: -2,
             nearShadowY: 0,
-            farShadowColor: Color.black.opacity(0.16),
-            farShadowRadius: 24,
+            farShadowColor: Color.black.opacity(0.06),
+            farShadowRadius: 14,
             farShadowX: -8,
             farShadowY: 0
         )
@@ -162,13 +162,13 @@ extension GlassSurfaceSpec {
     static func copyDrawerHeader() -> Self {
         .init(
             cornerRadius: 12,
-            tint: Color(.sRGB, red: 0.03, green: 0.04, blue: 0.06, opacity: 0.24),
-            materialOpacity: 0.82,
-            outerStrokeColor: Color.white.opacity(0.07),
-            innerStrokeColor: Color.white.opacity(0.04),
+            tint: Color(.sRGB, red: 0.96, green: 0.995, blue: 1.00, opacity: 0.040),
+            materialOpacity: 0.885,
+            outerStrokeColor: Color.white.opacity(0.095),
+            innerStrokeColor: Color.white.opacity(0.065),
             topEdgeColors: [
-                Color.white.opacity(0.10),
-                GlassTokens.Accent.primary.opacity(0.05),
+                Color.white.opacity(0.14),
+                GlassTokens.Accent.primary.opacity(0.09),
                 Color.clear,
             ],
             bottomEdgeColors: [
@@ -180,27 +180,27 @@ extension GlassSurfaceSpec {
             rimGlowOpacity: 0,
             rimGlowRadius: 0,
             noiseOpacity: 0,
-            nearShadowColor: Color.black.opacity(0.10),
+            nearShadowColor: Color.black.opacity(0.06),
             nearShadowRadius: 4,
             nearShadowX: 0,
             nearShadowY: 2,
-            farShadowColor: Color.black.opacity(0.06),
-            farShadowRadius: 8,
+            farShadowColor: Color.black.opacity(0.03),
+            farShadowRadius: 6,
             farShadowX: 0,
-            farShadowY: 4
+            farShadowY: 3
         )
     }
 
     static func copyDrawerCard() -> Self {
         .init(
             cornerRadius: 12,
-            tint: Color(.sRGB, red: 0.95, green: 0.99, blue: 1.00, opacity: 0.030),
-            materialOpacity: 0.80,
-            outerStrokeColor: Color.white.opacity(0.07),
-            innerStrokeColor: Color.white.opacity(0.04),
+            tint: Color(.sRGB, red: 0.975, green: 0.998, blue: 1.00, opacity: 0.034),
+            materialOpacity: 0.865,
+            outerStrokeColor: Color.white.opacity(0.095),
+            innerStrokeColor: Color.white.opacity(0.062),
             topEdgeColors: [
-                Color.white.opacity(0.08),
-                GlassTokens.Accent.primary.opacity(0.04),
+                Color.white.opacity(0.12),
+                GlassTokens.Accent.primary.opacity(0.07),
                 Color.clear,
             ],
             bottomEdgeColors: [
@@ -212,26 +212,26 @@ extension GlassSurfaceSpec {
             rimGlowOpacity: 0,
             rimGlowRadius: 0,
             noiseOpacity: 0,
-            nearShadowColor: Color.black.opacity(0.08),
-            nearShadowRadius: 4,
+            nearShadowColor: Color.black.opacity(0.05),
+            nearShadowRadius: 3,
             nearShadowX: 0,
-            nearShadowY: 2,
-            farShadowColor: Color.black.opacity(0.05),
-            farShadowRadius: 8,
+            nearShadowY: 1,
+            farShadowColor: Color.black.opacity(0.025),
+            farShadowRadius: 6,
             farShadowX: 0,
-            farShadowY: 4
+            farShadowY: 3
         )
     }
 
     static func copyDrawerTextPanel() -> Self {
         .init(
             cornerRadius: 10,
-            tint: Color(.sRGB, red: 0.95, green: 0.99, blue: 1.00, opacity: 0.022),
-            materialOpacity: 0.74,
-            outerStrokeColor: Color.white.opacity(0.06),
-            innerStrokeColor: Color.white.opacity(0.03),
+            tint: Color(.sRGB, red: 0.985, green: 1.00, blue: 1.00, opacity: 0.027),
+            materialOpacity: 0.815,
+            outerStrokeColor: Color.white.opacity(0.085),
+            innerStrokeColor: Color.white.opacity(0.055),
             topEdgeColors: [
-                Color.white.opacity(0.06),
+                Color.white.opacity(0.10),
                 Color.clear,
             ],
             bottomEdgeColors: [
@@ -243,27 +243,27 @@ extension GlassSurfaceSpec {
             rimGlowOpacity: 0,
             rimGlowRadius: 0,
             noiseOpacity: 0,
-            nearShadowColor: Color.black.opacity(0.06),
-            nearShadowRadius: 3,
+            nearShadowColor: Color.black.opacity(0.035),
+            nearShadowRadius: 2,
             nearShadowX: 0,
             nearShadowY: 1,
-            farShadowColor: Color.black.opacity(0.03),
-            farShadowRadius: 6,
+            farShadowColor: Color.black.opacity(0.015),
+            farShadowRadius: 4,
             farShadowX: 0,
-            farShadowY: 3
+            farShadowY: 2
         )
     }
 
     static func inputBar(isFocused: Bool) -> Self {
         .init(
             cornerRadius: 14,
-            tint: Color(.sRGB, red: 0.08, green: 0.10, blue: 0.14, opacity: 0.24),
-            materialOpacity: 0.92,
-            outerStrokeColor: Color.white.opacity(0.09),
-            innerStrokeColor: Color.white.opacity(0.05),
+            tint: Color(.sRGB, red: 0.90, green: 0.96, blue: 1.00, opacity: 0.030),
+            materialOpacity: 0.97,
+            outerStrokeColor: Color.white.opacity(0.115),
+            innerStrokeColor: Color.white.opacity(0.075),
             topEdgeColors: [
-                Color.white.opacity(0.14),
-                GlassTokens.Accent.primary.opacity(isFocused ? 0.10 : 0.06),
+                Color.white.opacity(0.17),
+                GlassTokens.Accent.primary.opacity(isFocused ? 0.14 : 0.09),
                 GlassTokens.Accent.secondary.opacity(0.03),
                 Color.clear,
             ],
@@ -274,17 +274,17 @@ extension GlassSurfaceSpec {
                 Color.clear,
             ],
             rimGlowColor: isFocused ? GlassTokens.Accent.primary : nil,
-            rimGlowOpacity: isFocused ? 0.10 : 0.0,
-            rimGlowRadius: isFocused ? 12 : 0,
-            noiseOpacity: 0.02,
-            nearShadowColor: Color.black.opacity(0.18),
-            nearShadowRadius: 8,
+            rimGlowOpacity: isFocused ? 0.14 : 0.0,
+            rimGlowRadius: isFocused ? 10 : 0,
+            noiseOpacity: 0.015,
+            nearShadowColor: Color.black.opacity(0.08),
+            nearShadowRadius: 5,
             nearShadowX: 0,
-            nearShadowY: 3,
-            farShadowColor: (isFocused ? GlassTokens.Accent.primary : Color.black).opacity(isFocused ? 0.07 : 0.10),
-            farShadowRadius: isFocused ? 16 : 14,
+            nearShadowY: 2,
+            farShadowColor: (isFocused ? GlassTokens.Accent.primary : Color.black).opacity(isFocused ? 0.09 : 0.04),
+            farShadowRadius: isFocused ? 12 : 10,
             farShadowX: 0,
-            farShadowY: isFocused ? 3 : 6
+            farShadowY: isFocused ? 2 : 4
         )
     }
 }
@@ -324,9 +324,9 @@ private struct GlassSurfaceBackground: View {
             shape.fill(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.03),
-                        Color.white.opacity(0.01),
-                        Color.black.opacity(0.02),
+                        Color.white.opacity(0.070),
+                        Color.white.opacity(0.025),
+                        Color.black.opacity(0.004),
                     ],
                     startPoint: .top,
                     endPoint: .bottom

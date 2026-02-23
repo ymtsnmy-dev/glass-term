@@ -15,21 +15,26 @@ enum GlassTokens {
     }
 
     enum Background {
-        static let overlayTint = Color(.sRGB, red: 0.040, green: 0.060, blue: 0.095, opacity: 0.16)
-        static let topGlow = Color(.sRGB, red: 0.380, green: 0.840, blue: 1.000, opacity: 0.08)
-        static let noiseOpacity: Double = 0.045
+        static let overlayTint = Color(.sRGB, red: 0.120, green: 0.155, blue: 0.220, opacity: 0.055)
+        static let topGlow = Color(.sRGB, red: 0.520, green: 0.900, blue: 1.000, opacity: 0.17)
+        static let envLightCyan = Color(.sRGB, red: 0.60, green: 0.94, blue: 1.000, opacity: 0.11)
+        static let envLightViolet = Color(.sRGB, red: 0.74, green: 0.64, blue: 1.000, opacity: 0.09)
+        static let noiseOpacity: Double = 0.032
     }
 
     enum Text {
         static let blockPrimary = Color(.sRGB, red: 0.760, green: 0.955, blue: 1.000, opacity: 0.97)
-        static let blockSecondary = Color(.sRGB, red: 0.680, green: 0.860, blue: 0.980, opacity: 0.82)
+        static let blockSecondary = Color(.sRGB, red: 0.720, green: 0.890, blue: 1.000, opacity: 0.86)
         static let blockStderr = Color(.sRGB, red: 1.000, green: 0.700, blue: 0.860, opacity: 0.96)
-        static let buttonLabel = Color(.sRGB, red: 0.865, green: 0.965, blue: 1.000, opacity: 0.97)
+        static let buttonLabel = Color(.sRGB, red: 0.880, green: 0.970, blue: 1.000, opacity: 0.95)
+        static let chromeLabel = Color(.sRGB, red: 0.900, green: 0.980, blue: 1.000, opacity: 0.95)
+        static let panelHeading = Color(.sRGB, red: 0.955, green: 0.982, blue: 1.000, opacity: 0.94)
+        static let panelSecondary = Color(.sRGB, red: 0.840, green: 0.900, blue: 0.980, opacity: 0.84)
     }
 
     enum BlockCard {
         static let cornerRadius: CGFloat = 16
-        static let separator = Color(.sRGB, red: 0.840, green: 0.950, blue: 1.000, opacity: 0.18)
+        static let separator = Color(.sRGB, red: 0.840, green: 0.950, blue: 1.000, opacity: 0.14)
         static let panelStyle = GlassPanelToken(
             fill: Color(.sRGB, red: 0.935, green: 0.975, blue: 1.000, opacity: 0.042),
             stroke: GlassStrokeToken(

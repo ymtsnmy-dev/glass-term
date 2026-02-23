@@ -19,8 +19,8 @@ struct TabbedTerminalRootView: View {
                     items: sessionManager.sessions.map { session in
                         TabBarView.Item(
                             id: session.id,
-                            title: tabPrimaryTitle(for: session),
-                            subtitle: tabSubtitle(for: session),
+                            title: session.title,
+                            subtitle: tabMetadataSubtitle(for: session),
                             state: tabState(for: session),
                             isActive: session.id == sessionManager.activeSessionID,
                         )
@@ -100,6 +100,20 @@ struct TabbedTerminalRootView: View {
         return nil
     }
 
+    private func tabMetadataSubtitle(for session: TerminalSession) -> String? {
+        let shell = tabPrimaryTitle(for: session)
+        let context = tabSubtitle(for: session)
+
+        if let context, !context.isEmpty {
+            if context.caseInsensitiveCompare(shell) == .orderedSame {
+                return context
+            }
+            return "\(shell) · \(context)"
+        }
+
+        return shell
+    }
+
     private func looksLikePathToken(_ token: String) -> Bool {
         token.contains("/") || token == "~" || token.hasPrefix("~/")
     }
@@ -131,6 +145,26 @@ private struct FrostedBackgroundLayer: View {
                 ],
                 startPoint: .top,
                 endPoint: .center
+            )
+
+            LinearGradient(
+                colors: [
+                    GlassTokens.Background.envLightCyan,
+                    GlassTokens.Background.envLightViolet,
+                    Color.clear,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .opacity(0.9)
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.075),
+                    Color.clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
 
             LiquidGlassNoiseOverlay(opacity: GlassTokens.Background.noiseOpacity)

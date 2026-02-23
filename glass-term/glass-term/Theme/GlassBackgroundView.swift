@@ -13,7 +13,7 @@ struct GlassBackgroundView: NSViewRepresentable {
     }
 
     private func configure(_ view: NSVisualEffectView) {
-        view.material = .hudWindow
+        view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .active
         view.isEmphasized = false

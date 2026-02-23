@@ -476,7 +476,16 @@ public final class PTYProcess {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
 
         let zshrcURL = directoryURL.appendingPathComponent(".zshrc", isDirectory: false)
-        let zshrcContents = "setopt PROMPT_SUBST\nexport PS1='<<<BLOCK_PROMPT>>>:%? '\nexport TERM=\"xterm-256color\"\n"
+        let zshrcContents = """
+        setopt PROMPT_SUBST
+        export TERM="xterm-256color"
+
+        # Initialize zsh completion so Tab completion and cd path candidates work.
+        autoload -Uz compinit
+        compinit -i
+
+        export PS1='<<<BLOCK_PROMPT>>>:%? '
+        """
         try zshrcContents.write(to: zshrcURL, atomically: true, encoding: .utf8)
         return directoryURL.path
     }

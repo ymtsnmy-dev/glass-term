@@ -17,6 +17,7 @@ public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var displayMode: DisplayMode = .blockMode
     @Published public private(set) var isProcessTerminated = false
     @Published public private(set) var processExitCode: Int32?
+    @Published public private(set) var trackedWorkingDirectoryPath: String?
 
     public let process: PTYProcess
     public let emulator: TerminalEmulator
@@ -32,8 +33,37 @@ public final class TerminalSessionController: ObservableObject {
         blockBoundaryManager.activeBlock
     }
 
+    public var currentDirectoryDisplayName: String {
+        if let pathToken = currentDirectoryPathToken(from: windowTitle) {
+            return condensedPathTail(from: pathToken)
+        }
+        if let trackedWorkingDirectoryPath, !trackedWorkingDirectoryPath.isEmpty {
+            return condensedPathTail(from: trackedWorkingDirectoryPath)
+        }
+        if let initialWorkingDirectory, !initialWorkingDirectory.isEmpty {
+            return condensedPathTail(from: initialWorkingDirectory)
+        }
+        return "~"
+    }
+
+    public var currentDirectoryPath: String? {
+        if let pathToken = currentDirectoryPathToken(from: windowTitle),
+           let resolved = resolvedPath(from: pathToken) {
+            return resolved
+        }
+        if let trackedWorkingDirectoryPath, !trackedWorkingDirectoryPath.isEmpty {
+            return resolvedPath(from: trackedWorkingDirectoryPath) ?? trackedWorkingDirectoryPath
+        }
+        if let initialWorkingDirectory, !initialWorkingDirectory.isEmpty {
+            return resolvedPath(from: initialWorkingDirectory) ?? initialWorkingDirectory
+        }
+        return nil
+    }
+
     private let bridge: PTYEmulatorBridge
     private let scrollbackBuffer: ScrollbackBuffer
+    private let initialWorkingDirectory: String?
+    private var previousTrackedWorkingDirectoryPath: String?
     private var latestBuffer: ScreenBuffer
     private var latestCombinedLines: [ScreenLine]
     private var latestCombinedBaseAbsoluteLineIndex: Int = 0
@@ -63,6 +93,11 @@ public final class TerminalSessionController: ObservableObject {
         self.emulator = bridge.emulator
         self.blockBoundaryManager = BlockBoundaryManager()
         self.scrollbackBuffer = ScrollbackBuffer(capacity: 10_000)
+        let launchWorkingDirectory = env["PWD"].flatMap { value in
+            value.isEmpty ? nil : value
+        } ?? FileManager.default.currentDirectoryPath
+        self.initialWorkingDirectory = launchWorkingDirectory
+        self.trackedWorkingDirectoryPath = launchWorkingDirectory
         let initialBuffer = bridge.snapshot()
         self.latestBuffer = initialBuffer
         self.latestCombinedLines = initialBuffer.visibleLines()
@@ -388,6 +423,7 @@ public final class TerminalSessionController: ObservableObject {
                 }
 
                 if scalar.value == 0x0D || scalar.value == 0x0A {
+                    updateTrackedWorkingDirectoryIfNeeded(forSubmittedCommand: pendingCommandLine)
                     blockBoundaryManager.registerUserInput(
                         pendingCommandLine,
                         outputStartAbsoluteLineIndex: currentBlockOutputStartAbsoluteLineIndex()
@@ -516,4 +552,82 @@ public final class TerminalSessionController: ObservableObject {
         }
         return line
     }
+
+    private func currentDirectoryPathToken(from windowTitle: String) -> String? {
+        windowTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .map(String.init)
+            .reversed()
+            .first(where: looksLikePathToken)
+    }
+
+    private func looksLikePathToken(_ token: String) -> Bool {
+        token.contains("/") || token == "~" || token.hasPrefix("~/")
+    }
+
+    private func condensedPathTail(from token: String) -> String {
+        let cleaned = cleanedPathToken(token)
+        if cleaned == "~" { return "~" }
+        if cleaned.hasPrefix("~/") {
+            let tail = String(cleaned.dropFirst(2)).split(separator: "/").last.map(String.init) ?? ""
+            return tail.isEmpty ? "~" : "~/" + tail
+        }
+        let tail = cleaned.split(separator: "/").last.map(String.init) ?? cleaned
+        return tail.isEmpty ? cleaned : tail
+    }
+
+    private func resolvedPath(from token: String) -> String? {
+        let cleaned = cleanedPathToken(token)
+        guard !cleaned.isEmpty else { return nil }
+        if cleaned == "~" {
+            return NSHomeDirectory()
+        }
+        if cleaned.hasPrefix("~/") {
+            return (NSHomeDirectory() as NSString).appendingPathComponent(String(cleaned.dropFirst(2)))
+        }
+        if cleaned.hasPrefix("/") {
+            return cleaned
+        }
+        return nil
+    }
+
+    private func cleanedPathToken(_ token: String) -> String {
+        token.trimmingCharacters(in: CharacterSet(charactersIn: "[](){}<>:,;"))
+    }
+
+    private func updateTrackedWorkingDirectoryIfNeeded(forSubmittedCommand command: String) {
+        guard let nextPath = resolvedWorkingDirectoryAfterCD(command) else { return }
+        guard nextPath != trackedWorkingDirectoryPath else { return }
+        previousTrackedWorkingDirectoryPath = trackedWorkingDirectoryPath
+        trackedWorkingDirectoryPath = nextPath
+    }
+
+    private func resolvedWorkingDirectoryAfterCD(_ command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let separators = ["&&", "||", ";", "|"]
+        guard separators.allSatisfy({ !trimmed.contains($0) }) else { return nil }
+
+        let parts = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !parts.isEmpty, parts[0] == "cd", parts.count <= 2 else { return nil }
+
+        if parts.count == 1 {
+            return NSHomeDirectory()
+        }
+
+        let argument = parts[1]
+        if argument == "-" {
+            return previousTrackedWorkingDirectoryPath ?? trackedWorkingDirectoryPath
+        }
+
+        if let resolved = resolvedPath(from: argument) {
+            return (resolved as NSString).standardizingPath
+        }
+
+        let base = trackedWorkingDirectoryPath ?? initialWorkingDirectory ?? NSHomeDirectory()
+        return ((base as NSString).appendingPathComponent(argument) as NSString).standardizingPath
+    }
+
 }
