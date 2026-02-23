@@ -10,7 +10,19 @@ struct ContentView: View {
             Color.black
                 .ignoresSafeArea()
 
-            TerminalView(session: session)
+            if session.displayMode == .rawMode {
+                TerminalView(session: session)
+            } else {
+                VStack(spacing: 0) {
+                    BlockListView(session: session)
+
+                    Divider()
+
+                    InputBarView { command in
+                        session.sendInput(command + "\n")
+                    }
+                }
+            }
         }
         .background(
             WindowReader { window in

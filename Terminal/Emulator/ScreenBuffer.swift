@@ -1,5 +1,14 @@
 import Foundation
 
+public func screenLinePlainText(_ line: ScreenLine) -> String {
+    var text = ""
+    text.reserveCapacity(line.count)
+    for cell in line where cell.width > 0 {
+        text += cell.text
+    }
+    return text
+}
+
 public struct ScreenColor: Sendable, Equatable {
     public var red: UInt8
     public var green: UInt8

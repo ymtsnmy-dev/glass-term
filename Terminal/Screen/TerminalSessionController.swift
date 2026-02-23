@@ -2,6 +2,11 @@ import CoreGraphics
 import Combine
 import Foundation
 
+public enum DisplayMode: Sendable, Equatable {
+    case blockMode
+    case rawMode
+}
+
 @MainActor
 public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var renderVersion: UInt64 = 0
@@ -9,6 +14,7 @@ public final class TerminalSessionController: ObservableObject {
     @Published public private(set) var viewportOffsetRows: Int = 0
     @Published public private(set) var windowTitle: String = "glass-term"
     @Published public private(set) var bellSequence: UInt64 = 0
+    @Published public private(set) var displayMode: DisplayMode = .blockMode
 
     public let process: PTYProcess
     public let emulator: TerminalEmulator
@@ -26,6 +32,7 @@ public final class TerminalSessionController: ObservableObject {
     private let scrollbackBuffer: ScrollbackBuffer
     private var latestBuffer: ScreenBuffer
     private var latestCombinedLines: [ScreenLine]
+    private var latestCombinedBaseAbsoluteLineIndex: Int = 0
     private var hasStarted = false
     private var lastRequestedSize: (rows: Int, cols: Int)?
     private var loggedFirstRenderableBuffer = false
@@ -33,7 +40,6 @@ public final class TerminalSessionController: ObservableObject {
     private var pendingCommandLine = ""
     private var inputEscapeState: InputEscapeState = .none
     private var isAlternateScreenActive = false
-    private var lastSentPromptRowTextForBlockFeed: String?
     public init(
         initialRows: Int = 24,
         initialCols: Int = 80,
@@ -55,33 +61,31 @@ public final class TerminalSessionController: ObservableObject {
         let initialBuffer = bridge.snapshot()
         self.latestBuffer = initialBuffer
         self.latestCombinedLines = initialBuffer.visibleLines()
+        self.latestCombinedBaseAbsoluteLineIndex = 0
         self.isAlternateScreenActive = initialBuffer.isAlternate
-        self.blockBoundaryManager.alternateScreenChanged(isActive: initialBuffer.isAlternate)
+        self.displayMode = initialBuffer.isAlternate ? .rawMode : .blockMode
+        self.blockBoundaryManager.displayModeChanged(self.displayMode)
 
         let scrollbackBuffer = self.scrollbackBuffer
         let blockBoundaryManager = self.blockBoundaryManager
-        let plainTextLine: (ScreenLine) -> String = { line in
-            var text = ""
-            text.reserveCapacity(line.count)
-            for cell in line where cell.width > 0 {
-                text += cell.text
-            }
-            return text
-        }
         bridge.emulator.onScrollbackLine = { line in
             scrollbackBuffer.append(line)
-            let committedLine = plainTextLine(line)
 #if DEBUG
-            print("[BLOCK] committed line: \(committedLine)")
+            print("[BLOCK] committed line: \(screenLinePlainText(line))")
 #endif
-            blockBoundaryManager.processOutput(committedLine + "\n")
         }
         bridge.emulator.onScrollbackCleared = {
             scrollbackBuffer.clear()
         }
+        bridge.onPTYOutput = { data in
+            blockBoundaryManager.processPTYOutput(data)
+        }
 
         bridge.screenUpdateHandlerQueue = .main
         bridge.processExitHandlerQueue = .main
+        bridge.onAlternateScreenChanged = { [weak self] isAlternate in
+            self?.handleAlternateScreenChanged(isAlternate: isAlternate)
+        }
         bridge.onScreenBufferUpdated = { [weak self] updatedBuffer in
             self?.applyUpdatedBuffer(updatedBuffer)
         }
@@ -252,26 +256,20 @@ public final class TerminalSessionController: ObservableObject {
         let previousOffset = viewportOffsetRows
 
         latestBuffer = buffer
-        if isAlternateScreenActive != buffer.isAlternate {
-            isAlternateScreenActive = buffer.isAlternate
-            blockBoundaryManager.alternateScreenChanged(isActive: buffer.isAlternate)
-            lastSentPromptRowTextForBlockFeed = nil
-            if buffer.isAlternate {
-                pendingCommandLine.removeAll(keepingCapacity: true)
-                inputEscapeState = .none
-            }
-        }
         windowTitle = buffer.windowTitle.isEmpty ? "glass-term" : buffer.windowTitle
         bellSequence = buffer.bellSequence
 
         if buffer.isAlternate {
+            latestCombinedBaseAbsoluteLineIndex = 0
             latestCombinedLines = buffer.visibleLines()
         } else {
-            let scrollbackLines = scrollbackBuffer.snapshot()
+            let scrollbackSnapshot = scrollbackBuffer.snapshotWithBaseAbsoluteIndex()
+            let scrollbackLines = scrollbackSnapshot.lines
             var combined: [ScreenLine] = []
             combined.reserveCapacity(scrollbackLines.count + buffer.rows)
             combined.append(contentsOf: scrollbackLines)
             combined.append(contentsOf: buffer.visibleLines())
+            latestCombinedBaseAbsoluteLineIndex = scrollbackSnapshot.baseAbsoluteIndex
             latestCombinedLines = combined
         }
 
@@ -285,8 +283,8 @@ public final class TerminalSessionController: ObservableObject {
             viewportOffsetRows = 0
         }
 
+        finalizePendingBlockIfNeeded()
         renderVersion &+= 1
-        feedPromptCursorRowToBlockBoundary(buffer)
 
         guard !loggedFirstRenderableBuffer else { return }
         for row in 0..<buffer.rows {
@@ -345,6 +343,21 @@ public final class TerminalSessionController: ObservableObject {
         return 0
     }
 
+    private func handleAlternateScreenChanged(isAlternate: Bool) {
+        isAlternateScreenActive = isAlternate
+
+        let nextDisplayMode: DisplayMode = isAlternate ? .rawMode : .blockMode
+        if displayMode != nextDisplayMode {
+            displayMode = nextDisplayMode
+        }
+        blockBoundaryManager.displayModeChanged(nextDisplayMode)
+
+        if isAlternate {
+            pendingCommandLine.removeAll(keepingCapacity: true)
+            inputEscapeState = .none
+        }
+    }
+
     private func recordInputForBlockBoundary(_ text: String) {
         guard !isAlternateScreenActive else { return }
 
@@ -357,7 +370,10 @@ public final class TerminalSessionController: ObservableObject {
                 }
 
                 if scalar.value == 0x0D || scalar.value == 0x0A {
-                    blockBoundaryManager.registerUserInput(pendingCommandLine)
+                    blockBoundaryManager.registerUserInput(
+                        pendingCommandLine,
+                        outputStartAbsoluteLineIndex: currentBlockOutputStartAbsoluteLineIndex()
+                    )
                     pendingCommandLine.removeAll(keepingCapacity: true)
                     continue
                 }
@@ -399,44 +415,87 @@ public final class TerminalSessionController: ObservableObject {
         case csi
     }
 
-    private func feedPromptCursorRowToBlockBoundary(_ buffer: ScreenBuffer) {
-        guard !buffer.isAlternate else {
-            lastSentPromptRowTextForBlockFeed = nil
-            return
-        }
+    private func currentBlockOutputStartAbsoluteLineIndex() -> Int {
+        let scrollbackRows = max(0, latestCombinedLines.count - latestBuffer.rows)
+        let cursorRow = min(max(0, latestBuffer.cursor.row), max(0, latestBuffer.rows - 1))
+        let currentAbsoluteLineIndex = latestCombinedBaseAbsoluteLineIndex + scrollbackRows + cursorRow
+        return currentAbsoluteLineIndex + 1
+    }
 
-        guard buffer.rows > 0 else {
-            lastSentPromptRowTextForBlockFeed = nil
-            return
-        }
+    private func finalizePendingBlockIfNeeded() {
+        guard displayMode == .blockMode else { return }
 
-        let promptRowText = buffer.rowText(buffer.cursor.row)
-        guard isStandalonePromptMarkerRow(promptRowText) else {
-            lastSentPromptRowTextForBlockFeed = nil
-            return
-        }
-
-        guard lastSentPromptRowTextForBlockFeed != promptRowText else { return }
-        lastSentPromptRowTextForBlockFeed = promptRowText
-
+        while let request = blockBoundaryManager.consumePendingBlockFinalizationRequest() {
+            let endAbsoluteLineIndex = currentPromptAbsoluteLineIndex()
+            let extraction = extractBlockStdout(
+                startAbsoluteLineIndex: request.outputStartAbsoluteLineIndex,
+                endAbsoluteLineIndex: endAbsoluteLineIndex,
+                command: request.command
+            )
 #if DEBUG
-        print("[BLOCK] prompt row sent: \(promptRowText)")
+            print("[BLOCK] text-range start=\(request.outputStartAbsoluteLineIndex) end=\(endAbsoluteLineIndex) lines=\(extraction.lineCount)")
+            print("[BLOCK] stdoutChars=\(extraction.stdout.count) utf8Bytes=\(extraction.stdout.utf8.count)")
 #endif
-        blockBoundaryManager.processOutput(promptRowText + "\n")
+            blockBoundaryManager.completePendingBlock(exitCode: request.exitCode, stdout: extraction.stdout)
+        }
     }
 
-    private func isStandalonePromptMarkerRow(_ text: String) -> Bool {
-        let prefix = "<<<BLOCK_PROMPT>>>:"
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix(prefix) else { return false }
+    private func extractBlockStdout(
+        startAbsoluteLineIndex: Int,
+        endAbsoluteLineIndex: Int,
+        command: String
+    ) -> (stdout: String, lineCount: Int) {
+        let clampedStart = max(startAbsoluteLineIndex, latestCombinedBaseAbsoluteLineIndex)
+        let clampedEnd = max(clampedStart, endAbsoluteLineIndex)
+        let startOffset = clampedStart - latestCombinedBaseAbsoluteLineIndex
+        let endOffset = min(clampedEnd - latestCombinedBaseAbsoluteLineIndex, latestCombinedLines.count)
 
-        var suffix = String(trimmed.dropFirst(prefix.count))
-        if suffix.first == "-" {
-            suffix.removeFirst()
+        guard startOffset < endOffset else { return ("", 0) }
+
+        var outputLines: [String] = []
+        outputLines.reserveCapacity(endOffset - startOffset)
+
+        for index in startOffset..<endOffset {
+            outputLines.append(normalizedBlockOutputLine(screenLinePlainText(latestCombinedLines[index])))
         }
 
-        guard !suffix.isEmpty else { return false }
-        return suffix.unicodeScalars.allSatisfy { CharacterSet.decimalDigits.contains($0) }
+        while let first = outputLines.first, isCommandEchoLine(first, command: command) {
+            outputLines.removeFirst()
+        }
+
+        let stdout: String
+        if outputLines.isEmpty {
+            stdout = ""
+        } else {
+            // Completed command output ends before the next prompt row, so rows are line-terminated.
+            stdout = outputLines.joined(separator: "\n") + "\n"
+        }
+        return (stdout, outputLines.count)
     }
 
+    private func currentPromptAbsoluteLineIndex() -> Int {
+        let scrollbackRows = max(0, latestCombinedLines.count - latestBuffer.rows)
+        let cursorRow = min(max(0, latestBuffer.cursor.row), max(0, latestBuffer.rows - 1))
+        return latestCombinedBaseAbsoluteLineIndex + scrollbackRows + cursorRow
+    }
+
+    private func isPromptMarkerLine(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespaces).hasPrefix("<<<BLOCK_PROMPT>>>:")
+    }
+
+    private func isCommandEchoLine(_ text: String, command: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if command.isEmpty {
+            return false
+        }
+        return trimmed == command || trimmed == "$ \(command)"
+    }
+
+    private func normalizedBlockOutputLine(_ text: String) -> String {
+        var line = text
+        while let last = line.last, last == " " || last == "\t" {
+            line.removeLast()
+        }
+        return line
+    }
 }
