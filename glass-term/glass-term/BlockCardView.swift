@@ -25,35 +25,7 @@ struct BlockCardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                 }
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: GlassTokens.BlockCard.cornerRadius, style: .continuous)
-                        .fill(.clear)
-                        .overlay(alignment: .top) {
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.12),
-                                    Color(.sRGB, red: 0.72, green: 0.95, blue: 1.0, opacity: 0.08),
-                                    Color.clear,
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(height: 1)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 1)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: GlassTokens.BlockCard.cornerRadius, style: .continuous))
-                        .allowsHitTesting(false)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: GlassTokens.BlockCard.cornerRadius, style: .continuous)
-                        .stroke(Color.black.opacity(0.10), lineWidth: 1)
-                        .blur(radius: 1.5)
-                        .offset(y: 1)
-                        .clipShape(RoundedRectangle(cornerRadius: GlassTokens.BlockCard.cornerRadius, style: .continuous))
-                        .allowsHitTesting(false)
-                }
-                .shadow(color: Color.black.opacity(0.14), radius: 6, x: 0, y: 3)
+                .glassSurface(.blockCard())
             } else {
                 cardContent(theme: theme)
                     .font(.system(.body, design: .monospaced))

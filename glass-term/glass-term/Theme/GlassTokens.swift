@@ -4,6 +4,16 @@ import SwiftUI
 enum GlassTokens {
     static let noiseAssetName: String? = nil
 
+    enum Accent {
+        static let primary = Color(.sRGB, red: 0.42, green: 0.90, blue: 1.00, opacity: 1.0)   // focus / active
+        static let secondary = Color(.sRGB, red: 0.66, green: 0.52, blue: 1.00, opacity: 1.0) // depth / edge tint
+
+        static let success = Color(.sRGB, red: 0.33, green: 0.96, blue: 0.84, opacity: 1.0)
+        static let warning = Color(.sRGB, red: 1.00, green: 0.78, blue: 0.36, opacity: 1.0)
+        static let failure = Color(.sRGB, red: 1.00, green: 0.47, blue: 0.55, opacity: 1.0)
+        static let idle = Color(.sRGB, red: 0.70, green: 0.88, blue: 1.00, opacity: 1.0)
+    }
+
     enum Background {
         static let overlayTint = Color(.sRGB, red: 0.040, green: 0.060, blue: 0.095, opacity: 0.16)
         static let topGlow = Color(.sRGB, red: 0.380, green: 0.840, blue: 1.000, opacity: 0.08)
@@ -244,7 +254,7 @@ enum GlassTokens {
             panel: GlassPanelToken(
                 fill: Color(.sRGB, red: 0.970, green: 0.990, blue: 1.000, opacity: 0.075),
                 stroke: .init(
-                    color: Color(.sRGB, red: 1.000, green: 1.000, blue: 1.000, opacity: 0.12),
+                    color: Color(.sRGB, red: 0.760, green: 0.950, blue: 1.000, opacity: 0.12),
                     width: 1
                 ),
                 highlight: .init(
@@ -253,8 +263,9 @@ enum GlassTokens {
                     endX: 0.50,
                     endY: 0.88,
                     stops: [
-                        .init(color: Color(.sRGB, red: 1.000, green: 1.000, blue: 1.000, opacity: 0.21), location: 0.0),
-                        .init(color: Color(.sRGB, red: 0.900, green: 0.970, blue: 1.000, opacity: 0.05), location: 0.32),
+                        .init(color: Color(.sRGB, red: 1.000, green: 1.000, blue: 1.000, opacity: 0.19), location: 0.0),
+                        .init(color: Accent.primary.opacity(0.10), location: 0.28),
+                        .init(color: Accent.secondary.opacity(0.04), location: 0.52),
                         .init(color: Color(.sRGB, red: 1.000, green: 1.000, blue: 1.000, opacity: 0.00), location: 1.0),
                     ]
                 ),
@@ -267,7 +278,7 @@ enum GlassTokens {
                 ),
                 noiseOpacity: 0.0
             ),
-            textColor: Text.buttonLabel
+            textColor: Color(.sRGB, red: 0.900, green: 0.980, blue: 1.000, opacity: 0.98)
         )
 
         static let pressed = GlassButtonVisualToken(

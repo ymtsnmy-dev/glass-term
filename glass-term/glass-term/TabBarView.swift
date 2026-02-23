@@ -68,13 +68,8 @@ struct TabBarView: View {
             .coordinateSpace(name: TabBarLayout.coordinateSpaceName)
             .background {
                 if isGlass {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.clear)
-                        .background {
-                            GlassPanelBackground(cornerRadius: 16, token: GlassTokens.TabBar.strip)
-                        }
-                        .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 5)
-                        .shadow(color: Color(.sRGB, red: 0.30, green: 0.78, blue: 1.00, opacity: 0.08), radius: 14, x: 0, y: 2)
+                    Color.clear
+                        .glassSurface(.tabStrip())
                 } else {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.black.opacity(0.90))
@@ -164,8 +159,10 @@ private struct TabPillView: View {
         .background { pillBackground }
         .overlay { pillStroke }
         .overlay { pillEdgeHighlights }
-        .shadow(color: glowColor, radius: item.isActive ? 10 : (isHovered ? 6 : 0), x: 0, y: item.isActive ? 2 : 0)
-        .shadow(color: Color.black.opacity(item.isActive ? 0.16 : 0.10), radius: item.isActive ? 8 : 5, x: 0, y: 3)
+        .if(isGlass) { view in
+            view.glassSurface(.tabPill(isActive: item.isActive, isHovered: isHovered))
+        }
+        .shadow(color: glowColor, radius: item.isActive ? 10 : (isHovered ? 5 : 0), x: 0, y: item.isActive ? 2 : 0)
         .scaleEffect(!item.isActive && isHovered ? 1.01 : 1.0)
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .animation(.easeInOut(duration: 0.15), value: item.isActive)
@@ -177,11 +174,7 @@ private struct TabPillView: View {
     @ViewBuilder
     private var pillBackground: some View {
         if isGlass {
-            GlassPanelBackground(
-                cornerRadius: pillCornerRadius,
-                token: item.isActive ? GlassTokens.TabBar.activeChip : GlassTokens.TabBar.inactiveChip
-            )
-            .opacity(item.isActive ? 1.0 : (isHovered ? 1.0 : 0.82))
+            Color.clear
         } else {
             RoundedRectangle(cornerRadius: pillCornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -193,8 +186,7 @@ private struct TabPillView: View {
     private var pillStroke: some View {
         let shape = RoundedRectangle(cornerRadius: pillCornerRadius, style: .continuous)
         if isGlass {
-            shape
-                .stroke(item.isActive ? Color.white.opacity(0.12) : Color.white.opacity(isHovered ? 0.12 : 0.09), lineWidth: 1)
+            EmptyView()
         } else {
             shape.stroke(Color.white.opacity(item.isActive ? 0.22 : 0.10), lineWidth: 1)
         }
@@ -203,40 +195,7 @@ private struct TabPillView: View {
     @ViewBuilder
     private var pillEdgeHighlights: some View {
         if isGlass {
-            let shape = RoundedRectangle(cornerRadius: pillCornerRadius, style: .continuous)
-
-            shape
-                .fill(.clear)
-                .overlay(alignment: .top) {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(item.isActive ? 0.22 : (isHovered ? 0.16 : 0.10)),
-                            Color(.sRGB, red: 0.70, green: 0.94, blue: 1.0, opacity: item.isActive ? 0.12 : 0.05),
-                            Color.clear,
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(height: 1)
-                    .padding(.horizontal, 6)
-                    .padding(.top, 1)
-                }
-                .overlay(alignment: .bottom) {
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            Color.white.opacity(item.isActive ? 0.06 : 0.03),
-                            Color(.sRGB, red: 0.40, green: 0.88, blue: 1.0, opacity: item.isActive ? 0.10 : 0.04),
-                            Color.clear,
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(height: 1)
-                    .padding(.horizontal, 9)
-                    .padding(.bottom, 1)
-                }
-                .clipShape(shape)
+            EmptyView()
         } else {
             EmptyView()
         }
@@ -277,7 +236,7 @@ private struct TabPillView: View {
     private var glowColor: Color {
         guard isGlass else { return .clear }
         if item.isActive {
-            return Color(.sRGB, red: 0.38, green: 0.86, blue: 1.00, opacity: 0.22)
+            return Color(.sRGB, red: 0.44, green: 0.88, blue: 1.00, opacity: 0.16)
         }
         if isHovered {
             return Color.white.opacity(0.08)
@@ -316,15 +275,15 @@ private struct SessionStatusDot: View {
         switch state {
         case .running:
             return isGlass
-                ? Color(.sRGB, red: 0.33, green: 0.96, blue: 0.84, opacity: 0.98)
+                ? GlassTokens.Accent.success.opacity(0.98)
                 : Color.green.opacity(0.95)
         case .idle:
             return isGlass
-                ? Color(.sRGB, red: 0.62, green: 0.87, blue: 1.00, opacity: 0.92)
+                ? GlassTokens.Accent.idle.opacity(0.92)
                 : Color.white.opacity(0.72)
         case .exited:
             return isGlass
-                ? Color(.sRGB, red: 1.00, green: 0.62, blue: 0.82, opacity: 0.95)
+                ? GlassTokens.Accent.failure.opacity(0.95)
                 : Color.red.opacity(0.9)
         }
     }
@@ -427,7 +386,9 @@ private struct ActiveTabUnderline: View {
         if isGlass {
             return [
                 Color(.sRGB, red: 0.30, green: 0.88, blue: 1.00, opacity: 0.00),
-                Color(.sRGB, red: 0.74, green: 0.98, blue: 1.00, opacity: 0.92),
+                GlassTokens.Accent.secondary.opacity(0.16),
+                Color(.sRGB, red: 0.74, green: 0.98, blue: 1.00, opacity: 0.90),
+                GlassTokens.Accent.secondary.opacity(0.10),
                 Color(.sRGB, red: 0.30, green: 0.88, blue: 1.00, opacity: 0.00),
             ]
         }

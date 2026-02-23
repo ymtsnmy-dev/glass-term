@@ -45,42 +45,25 @@ struct InputBarView: View {
         .padding(.vertical, 10)
         .background {
             if isGlass {
-                GlassPanelBackground(cornerRadius: 14, token: GlassTokens.InputBar.panel)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.18), Color.clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(height: 1)
-                            .allowsHitTesting(false)
-                    }
-                    .overlay(alignment: .trailing) {
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.clear, GlassTokens.InputBar.borderGlow, Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(width: 1)
-                            .allowsHitTesting(false)
-                    }
+                Color.clear
             } else {
                 Rectangle().fill(.regularMaterial)
             }
         }
         .if(isGlass) { view in
             view
+                .glassSurface(.inputBar(isFocused: isCommandFieldFocused))
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
-                .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 4)
-                .shadow(color: Color(.sRGB, red: 0.38, green: 0.88, blue: 1.0, opacity: 0.05), radius: 14, x: 0, y: 2)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(GlassTokens.Accent.primary.opacity(isCommandFieldFocused ? 0.14 : 0.0), lineWidth: 1)
+                        .blur(radius: isCommandFieldFocused ? 5 : 0)
+                        .opacity(isCommandFieldFocused ? 1 : 0)
+                        .allowsHitTesting(false)
+                }
+                .animation(.easeInOut(duration: 0.15), value: isCommandFieldFocused)
         }
     }
 
