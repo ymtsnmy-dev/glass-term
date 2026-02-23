@@ -6,7 +6,7 @@ final class ThemeManager: ObservableObject {
     @Published var activeTheme: Theme
 
     init() {
-        self.activeTheme = DefaultTheme.value
+        self.activeTheme = GlassTheme.value
     }
 
     init(initialTheme: Theme) {

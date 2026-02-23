@@ -25,7 +25,6 @@ struct CopyStackDrawer: View {
             }
         }
         .padding(14)
-        .frame(width: 360)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial)
         .overlay(alignment: .leading) {
