@@ -98,6 +98,7 @@ public final class TerminalEmulator {
     private var activeBufferKindStorage: ActiveBufferKind = .primary
     private var onScrollbackLineStorage: ((ScreenLine) -> Void)?
     private var onScrollbackClearedStorage: (() -> Void)?
+    private var onAlternateScreenChangedStorage: ((Bool) -> Void)?
 
     public var activeBufferKind: ActiveBufferKind {
         withQueue { activeBufferKindStorage }
@@ -111,6 +112,11 @@ public final class TerminalEmulator {
     public var onScrollbackCleared: (() -> Void)? {
         get { withQueue { onScrollbackClearedStorage } }
         set { withQueue { onScrollbackClearedStorage = newValue } }
+    }
+
+    public var onAlternateScreenChanged: ((Bool) -> Void)? {
+        get { withQueue { onAlternateScreenChangedStorage } }
+        set { withQueue { onAlternateScreenChangedStorage = newValue } }
     }
 
     public init(rows: Int, cols: Int) {
@@ -210,10 +216,14 @@ public final class TerminalEmulator {
     fileprivate func handleSetTermProp(prop: VTermProp, val: UnsafeMutablePointer<VTermValue>?) -> Int32 {
         if prop == VTERM_PROP_ALTSCREEN {
             let isAlternate = (val?.pointee.boolean ?? 0) != 0
+            let previousIsAlternate = (activeBufferKindStorage == .alternate)
             activeBufferKindStorage = isAlternate ? .alternate : .primary
             rebuildActiveBufferFromScreen()
             syncCursorFromState()
             syncTerminalPropertiesToBuffers()
+            if previousIsAlternate != isAlternate {
+                onAlternateScreenChangedStorage?(isAlternate)
+            }
             return 1
         }
 

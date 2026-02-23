@@ -27,6 +27,32 @@ public final class PTYEmulatorBridge {
         }
     }
 
+    public var onPTYOutput: ((Data) -> Void)? {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return onPTYOutputStorage
+        }
+        set {
+            stateLock.lock()
+            onPTYOutputStorage = newValue
+            stateLock.unlock()
+        }
+    }
+
+    public var onAlternateScreenChanged: ((Bool) -> Void)? {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return onAlternateScreenChangedStorage
+        }
+        set {
+            stateLock.lock()
+            onAlternateScreenChangedStorage = newValue
+            stateLock.unlock()
+        }
+    }
+
     public var screenUpdateHandlerQueue: DispatchQueue {
         get {
             stateLock.lock()
@@ -70,6 +96,8 @@ public final class PTYEmulatorBridge {
 
     private var onScreenBufferUpdatedStorage: ((ScreenBuffer) -> Void)?
     private var onProcessExitStorage: ((Int32?) -> Void)?
+    private var onPTYOutputStorage: ((Data) -> Void)?
+    private var onAlternateScreenChangedStorage: ((Bool) -> Void)?
     private var screenUpdateHandlerQueueStorage: DispatchQueue = .main
     private var processExitHandlerQueueStorage: DispatchQueue = .main
 
@@ -86,6 +114,9 @@ public final class PTYEmulatorBridge {
         process = PTYProcess(shellPath: shellPath, env: env)
         emulator = TerminalEmulator(rows: rows, cols: cols)
         emulatorQueue.setSpecific(key: emulatorQueueKey, value: 1)
+        emulator.onAlternateScreenChanged = { [weak self] isAlternate in
+            self?.emitAlternateScreenChanged(isAlternate: isAlternate)
+        }
 
         process.outputHandlerQueue = ptyOutputQueue
         process.onOutput = { [weak self] data in
@@ -145,9 +176,21 @@ public final class PTYEmulatorBridge {
 
         emulatorQueue.async { [weak self] in
             guard let self else { return }
+            self.emitPTYOutput(data)
             self.emulator.feed(data)
             self.emitScreenBufferUpdated(buffer: self.snapshot())
         }
+    }
+
+    private func emitPTYOutput(_ data: Data) {
+        let callback: ((Data) -> Void)? = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return onPTYOutputStorage
+        }()
+
+        guard let callback else { return }
+        callback(data)
     }
 
     private func emitScreenBufferUpdated(buffer: ScreenBuffer) {
@@ -179,6 +222,22 @@ public final class PTYEmulatorBridge {
 
         callbackState.1.async {
             callback(code)
+        }
+    }
+
+    private func emitAlternateScreenChanged(isAlternate: Bool) {
+        let callbackState: (((Bool) -> Void)?, DispatchQueue) = {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return (onAlternateScreenChangedStorage, screenUpdateHandlerQueueStorage)
+        }()
+
+        guard let callback = callbackState.0 else {
+            return
+        }
+
+        callbackState.1.async {
+            callback(isAlternate)
         }
     }
 }

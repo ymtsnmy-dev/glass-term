@@ -9,6 +9,7 @@ public final class ScrollbackBuffer: @unchecked Sendable {
     private var storage: [ScreenLine?]
     private var startIndex: Int = 0
     private var countStorage: Int = 0
+    private var totalAppendedStorage: Int = 0
 
     public init(capacity: Int = 10_000) {
         precondition(capacity > 0, "Scrollback capacity must be positive")
@@ -22,9 +23,16 @@ public final class ScrollbackBuffer: @unchecked Sendable {
         return countStorage
     }
 
+    public var oldestAbsoluteIndex: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return totalAppendedStorage - countStorage
+    }
+
     public func append(_ line: ScreenLine) {
         lock.lock()
         defer { lock.unlock() }
+        totalAppendedStorage += 1
 
         if countStorage < capacity {
             let writeIndex = (startIndex + countStorage) % capacity
@@ -51,10 +59,15 @@ public final class ScrollbackBuffer: @unchecked Sendable {
     }
 
     public func snapshot() -> [ScreenLine] {
+        snapshotWithBaseAbsoluteIndex().lines
+    }
+
+    public func snapshotWithBaseAbsoluteIndex() -> (baseAbsoluteIndex: Int, lines: [ScreenLine]) {
         lock.lock()
         defer { lock.unlock() }
 
-        guard countStorage > 0 else { return [] }
+        let baseAbsoluteIndex = totalAppendedStorage - countStorage
+        guard countStorage > 0 else { return (baseAbsoluteIndex, []) }
 
         var lines: [ScreenLine] = []
         lines.reserveCapacity(countStorage)
@@ -64,6 +77,6 @@ public final class ScrollbackBuffer: @unchecked Sendable {
                 lines.append(line)
             }
         }
-        return lines
+        return (baseAbsoluteIndex, lines)
     }
 }
