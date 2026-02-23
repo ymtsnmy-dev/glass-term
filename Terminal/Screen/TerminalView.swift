@@ -43,11 +43,12 @@ public struct TerminalView: View {
             let viewSize = proxy.size
             let renderVersion = session.renderVersion
             let buffer = session.snapshot()
-            let totalRows = buffer.totalRows
+            let combinedLines = session.combinedBuffer()
+            let totalRows = combinedLines.count
             let maxViewportOffsetRows = session.maxViewportOffsetRows()
             let viewportOffsetRows = min(session.viewportOffsetRows, maxViewportOffsetRows)
             let viewportStartDisplayRow = max(0, totalRows - buffer.rows - viewportOffsetRows)
-            let selectionRange = normalizedSelectionRange(for: buffer)
+            let selectionRange = normalizedSelectionRange(cols: buffer.cols, totalRows: totalRows)
 
             ZStack(alignment: .topLeading) {
                 Canvas(rendersAsynchronously: false) { context, canvasSize in
@@ -60,12 +61,14 @@ public struct TerminalView: View {
                     drawScreenBuffer(
                         context: &context,
                         buffer: buffer,
+                        combinedLines: combinedLines,
                         startDisplayRow: viewportStartDisplayRow,
                         selectionRange: selectionRange
                     )
                     drawCursor(
                         context: &context,
                         buffer: buffer,
+                        scrollbackRows: max(0, totalRows - buffer.rows),
                         startDisplayRow: viewportStartDisplayRow
                     )
                 }
@@ -82,7 +85,11 @@ public struct TerminalView: View {
                         session.sendPaste(text)
                     },
                     onCopy: {
-                        if let copied = selectedText(buffer: buffer, selectionRange: selectionRange) {
+                        if let copied = selectedText(
+                            combinedLines: combinedLines,
+                            cols: buffer.cols,
+                            selectionRange: selectionRange
+                        ) {
                             copyToPasteboard(copied)
                         }
                     },
@@ -126,7 +133,8 @@ public struct TerminalView: View {
 
                 if maxViewportOffsetRows > 0 {
                     let trackHeight = max(1, viewSize.height - 8)
-                    let thumbHeight = max(24, trackHeight * CGFloat(buffer.rows) / CGFloat(totalRows))
+                    let safeTotalRows = max(1, totalRows)
+                    let thumbHeight = max(24, trackHeight * CGFloat(buffer.rows) / CGFloat(safeTotalRows))
                     let maxThumbTravel = max(0, trackHeight - thumbHeight)
                     let fractionFromTop = 1 - (CGFloat(viewportOffsetRows) / CGFloat(maxViewportOffsetRows))
                     let thumbY = maxThumbTravel * fractionFromTop
@@ -219,6 +227,7 @@ public struct TerminalView: View {
     private func drawScreenBuffer(
         context: inout GraphicsContext,
         buffer: ScreenBuffer,
+        combinedLines: [ScreenLine],
         startDisplayRow: Int,
         selectionRange: SelectionRange?
     ) {
@@ -230,7 +239,8 @@ public struct TerminalView: View {
             for col in 0..<buffer.cols {
                 drawCell(
                     context: &context,
-                    buffer: buffer,
+                    combinedLines: combinedLines,
+                    cols: buffer.cols,
                     row: row,
                     col: col,
                     displayRow: startDisplayRow + row,
@@ -242,7 +252,8 @@ public struct TerminalView: View {
 
     private func drawCell(
         context: inout GraphicsContext,
-        buffer: ScreenBuffer,
+        combinedLines: [ScreenLine],
+        cols: Int,
         row: Int,
         col: Int,
         displayRow: Int,
@@ -254,7 +265,7 @@ public struct TerminalView: View {
             width: cellSize.width,
             height: cellSize.height
         )
-        let cell = buffer.cellAtDisplayRow(displayRow, col: col)
+        let cell = cellAtDisplayRow(displayRow, col: col, combinedLines: combinedLines, cols: cols)
         context.fill(Path(frame), with: .color(resolvedBackgroundColor(for: cell)))
         if isCellSelected(displayRow: displayRow, col: col, selectionRange: selectionRange) {
             context.fill(Path(frame), with: .color(Color.white.opacity(0.25)))
@@ -275,6 +286,7 @@ public struct TerminalView: View {
     private func drawCursor(
         context: inout GraphicsContext,
         buffer: ScreenBuffer,
+        scrollbackRows: Int,
         startDisplayRow: Int
     ) {
         let cursor = buffer.cursor
@@ -285,7 +297,7 @@ public struct TerminalView: View {
         guard cursor.row >= 0, cursor.row < buffer.rows else { return }
         guard cursor.col >= 0, cursor.col < buffer.cols else { return }
 
-        let cursorDisplayRow = buffer.scrollbackRows + cursor.row
+        let cursorDisplayRow = scrollbackRows + cursor.row
         let localRow = cursorDisplayRow - startDisplayRow
         guard localRow >= 0, localRow < buffer.rows else {
             return
@@ -341,6 +353,20 @@ public struct TerminalView: View {
         var resolved = context.resolve(rendered)
         resolved.shading = .color(color)
         context.draw(resolved, at: origin, anchor: .topLeading)
+    }
+
+    private func cellAtDisplayRow(
+        _ displayRow: Int,
+        col: Int,
+        combinedLines: [ScreenLine],
+        cols: Int
+    ) -> ScreenCell {
+        guard col >= 0, col < cols else { return .blank }
+        guard displayRow >= 0, displayRow < combinedLines.count else { return .blank }
+
+        let line = combinedLines[displayRow]
+        guard col < line.count else { return .blank }
+        return line[col]
     }
 
     private func resolvedForegroundColor(for cell: ScreenCell) -> Color {
@@ -466,25 +492,25 @@ public struct TerminalView: View {
         return GridPosition(displayRow: viewportStartDisplayRow + row, col: col)
     }
 
-    private func normalizedSelectionRange(for buffer: ScreenBuffer) -> SelectionRange? {
+    private func normalizedSelectionRange(cols: Int, totalRows: Int) -> SelectionRange? {
         guard let anchor = selectionAnchor, let extent = selectionExtent else {
             return nil
         }
-        guard buffer.cols > 0, buffer.totalRows > 0 else {
+        guard cols > 0, totalRows > 0 else {
             return nil
         }
 
-        let normalizedAnchor = clamp(anchor, buffer: buffer)
-        let normalizedExtent = clamp(extent, buffer: buffer)
+        let normalizedAnchor = clamp(anchor, cols: cols, totalRows: totalRows)
+        let normalizedExtent = clamp(extent, cols: cols, totalRows: totalRows)
         if sortOrder(lhs: normalizedAnchor, rhs: normalizedExtent) {
             return SelectionRange(lower: normalizedAnchor, upper: normalizedExtent)
         }
         return SelectionRange(lower: normalizedExtent, upper: normalizedAnchor)
     }
 
-    private func clamp(_ position: GridPosition, buffer: ScreenBuffer) -> GridPosition {
-        let clampedRow = min(max(0, position.displayRow), max(0, buffer.totalRows - 1))
-        let clampedCol = min(max(0, position.col), max(0, buffer.cols - 1))
+    private func clamp(_ position: GridPosition, cols: Int, totalRows: Int) -> GridPosition {
+        let clampedRow = min(max(0, position.displayRow), max(0, totalRows - 1))
+        let clampedCol = min(max(0, position.col), max(0, cols - 1))
         return GridPosition(displayRow: clampedRow, col: clampedCol)
     }
 
@@ -512,7 +538,11 @@ public struct TerminalView: View {
         return true
     }
 
-    private func selectedText(buffer: ScreenBuffer, selectionRange: SelectionRange?) -> String? {
+    private func selectedText(
+        combinedLines: [ScreenLine],
+        cols: Int,
+        selectionRange: SelectionRange?
+    ) -> String? {
         guard let selectionRange else { return nil }
 
         var lines: [String] = []
@@ -520,7 +550,7 @@ public struct TerminalView: View {
 
         for displayRow in selectionRange.lower.displayRow...selectionRange.upper.displayRow {
             let startCol = displayRow == selectionRange.lower.displayRow ? selectionRange.lower.col : 0
-            let endCol = displayRow == selectionRange.upper.displayRow ? selectionRange.upper.col : (buffer.cols - 1)
+            let endCol = displayRow == selectionRange.upper.displayRow ? selectionRange.upper.col : (cols - 1)
             guard startCol <= endCol else {
                 lines.append("")
                 continue
@@ -529,7 +559,7 @@ public struct TerminalView: View {
             var rowText = ""
             rowText.reserveCapacity(endCol - startCol + 1)
             for col in startCol...endCol {
-                let cell = buffer.cellAtDisplayRow(displayRow, col: col)
+                let cell = cellAtDisplayRow(displayRow, col: col, combinedLines: combinedLines, cols: cols)
                 if cell.width > 0 {
                     rowText += cell.text
                 }
@@ -651,11 +681,12 @@ private struct TerminalKeyInputView: NSViewRepresentable {
                 }
             }
 
-            if event.modifierFlags.contains(.control),
-               let controlCharacter = event.charactersIgnoringModifiers?.lowercased(),
-               controlCharacter == "c" {
-                onCtrlC()
-                return true
+            if event.modifierFlags.contains(.control) {
+                let controlCharacter = event.charactersIgnoringModifiers?.lowercased()
+                if controlCharacter == "c" || event.keyCode == 8 || event.characters == "\u{03}" {
+                    onCtrlC()
+                    return true
+                }
             }
 
             if let sequence = specialKeySequence(for: event.keyCode) {
@@ -688,7 +719,8 @@ private struct TerminalKeyInputView: NSViewRepresentable {
                 onInput("\u{1B}[3~")
                 return true
             case "cancelOperation:":
-                onInput("\u{1B}")
+                // AppKit often maps Ctrl+C to cancelOperation: during key interpretation.
+                onCtrlC()
                 return true
             case "moveLeft:":
                 onInput("\u{1B}[D")
